@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>訪問スケジュール作成システム（GAS版・第1段）</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: system-ui, "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; background: #f1f5f9; color: #1e293b; }
+    header { background: linear-gradient(90deg, #0f172a, #1e3a5f, #1e40af); color: #fff; padding: 12px 16px; }
+    header h1 { margin: 0; font-size: 16px; }
+    header p { margin: 2px 0 0; font-size: 11px; color: #94a3b8; }
+    main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    input, select, button { font-size: 14px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow-x: auto; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+    table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    th { background: #f8fafc; color: #64748b; position: sticky; top: 0; }
+    tr.group td { background: #f1f5f9; font-weight: 600; color: #334155; }
+    .muted { color: #94a3b8; }
+    .status { padding: 20px; text-align: center; color: #64748b; }
+    .err { color: #dc2626; }
+    #config { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 13px; }
+    #config input { width: 100%; box-sizing: border-box; margin-top: 6px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .tab { background: #fff; color: #334155; border: 1px solid #cbd5e1; font-weight: 600; }
+    .tab.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .warn { color: #b45309; font-weight: 600; }
+    label.fld { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>訪問スケジュール作成システム</h1>
+    <p>名古屋支所 校正業務 ／ GAS版（第1段：工場一覧）</p>
+  </header>
+  <main>
+    <div id="config">
+      <b>初回設定：</b>Apps ScriptのウェブアプリURL（/exec で終わるもの）と、Code.gsに設定した<b>合言葉</b>を入力してください。ブラウザにのみ記憶され、次回から不要です（この2つは他人に教えない・公開場所に貼らないでください）。
+      <input id="apiUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" />
+      <input id="apiToken" type="password" placeholder="合言葉（Code.gsのAPI_TOKENと同じ値）" />
+    </div>
+
+    <div class="tabs">
+      <button class="tab on" data-tab="list" type="button">工場一覧</button>
+      <button class="tab" data-tab="gen" type="button">スケジュール作成</button>
+    </div>
+
+    <section id="panel-list">
+      <div class="toolbar">
+        <input id="search" placeholder="管理番号・工場名で検索" style="flex:1; min-width:180px;" />
+        <select id="district"><option value="">全ての地区</option></select>
+        <button id="reload" type="button">再読み込み</button>
+      </div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>管理番号</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th><th>機器</th></tr>
+          </thead>
+          <tbody id="rows"><tr><td colspan="6" class="status">URLと合言葉を設定して読み込んでください</td></tr></tbody>
+        </table>
+      </div>
+      <p class="muted" id="count"></p>
+    </section>
+
+    <section id="panel-gen" hidden>
+      <div class="toolbar">
+        <label class="fld">校正日<input id="genDate" type="date" /></label>
+        <select id="genDistrict"><option value="">自動（最も切迫した地区）</option></select>
+        <button id="genBtn" type="button">スケジュール作成</button>
+      </div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>順</th><th>時刻</th><th>事業所名</th><th>地区</th><th>距離</th><th>満了日</th><th>注意</th></tr>
+          </thead>
+          <tbody id="genRows"><tr><td colspan="7" class="status">校正日を選んで「スケジュール作成」を押してください</td></tr></tbody>
+        </table>
+      </div>
+      <p class="muted" id="genInfo"></p>
+    </section>
+  </main>
+
+  <script>
+    var LS_KEY = 'gas_api_url';
+    var LS_TOKEN = 'gas_api_token';
+    var apiInput = document.getElementById('apiUrl');
+    var tokenInput = document.getElementById('apiToken');
+    var searchInput = document.getElementById('search');
+    var districtSelect = document.getElementById('district');
+    var rowsEl = document.getElementById('rows');
+    var countEl = document.getElementById('count');
+    var allFactories = [];
+
+    // スケジュール作成タブ用
+    var genDateInput = document.getElementById('genDate');
+    var genDistrictSelect = document.getElementById('genDistrict');
+    var genRowsEl = document.getElementById('genRows');
+    var genInfoEl = document.getElementById('genInfo');
+    var genBtn = document.getElementById('genBtn');
+
+    apiInput.value = localStorage.getItem(LS_KEY) || '';
+    tokenInput.value = localStorage.getItem(LS_TOKEN) || '';
+
+    function apiUrl() {
+      var u = apiInput.value.trim();
+      if (u) localStorage.setItem(LS_KEY, u);
+      return u;
+    }
+
+    function apiToken() {
+      var t = tokenInput.value.trim();
+      // 合言葉はこの端末のブラウザにだけ保存（サーバやリポジトリには残さない）
+      if (t) localStorage.setItem(LS_TOKEN, t);
+      return t;
+    }
+
+    async function load() {
+      var base = apiUrl();
+      if (!base) { setStatus('先にApps ScriptのURLを貼り付けてください', true); return; }
+      if (!apiToken()) { setStatus('合言葉（トークン）を入力してください', true); return; }
+      setStatus('読み込み中...');
+      try {
+        var res = await fetch(base + '?action=factories&token=' + encodeURIComponent(apiToken()));
+        var data = await res.json();
+        if (data.error) { setStatus('エラー: ' + data.error, true); return; }
+        allFactories = data.factories || [];
+        buildDistrictOptions();
+        render();
+      } catch (e) {
+        setStatus('通信に失敗しました: ' + e + '（URLが正しいか、デプロイのアクセス権が「全員」か確認してください）', true);
+      }
+    }
+
+    function buildDistrictOptions() {
+      var counts = {};
+      allFactories.forEach(function (f) { var d = f.district || '(地区不明)'; counts[d] = (counts[d]||0)+1; });
+      var current = districtSelect.value;
+      districtSelect.innerHTML = '<option value="">全ての地区</option>';
+      Object.keys(counts).sort().forEach(function (d) {
+        var o = document.createElement('option');
+        o.value = d; o.textContent = d + '（' + counts[d] + '）';
+        districtSelect.appendChild(o);
+      });
+      districtSelect.value = current;
+
+      // スケジュール作成タブの地区プルダウンにも同じ一覧を反映（先頭は「自動」）
+      var curG = genDistrictSelect.value;
+      genDistrictSelect.innerHTML = '<option value="">自動（最も切迫した地区）</option>';
+      Object.keys(counts).sort().forEach(function (d) {
+        var o = document.createElement('option');
+        o.value = d; o.textContent = d + '（' + counts[d] + '）';
+        genDistrictSelect.appendChild(o);
+      });
+      genDistrictSelect.value = curG;
+    }
+
+    function render() {
+      var s = searchInput.value.trim();
+      var d = districtSelect.value;
+      var list = allFactories.filter(function (f) {
+        if (d && (f.district || '(地区不明)') !== d) return false;
+        if (s && String(f.management_no).indexOf(s) === -1 && String(f.office_name).indexOf(s) === -1) return false;
+        return true;
+      });
+      list.sort(function (a, b) {
+        var da = a.district || '', db_ = b.district || '';
+        if (da !== db_) return da < db_ ? -1 : 1;
+        return String(a.management_no) < String(b.management_no) ? -1 : 1;
+      });
+      rowsEl.innerHTML = '';
+      var lastDistrict = null;
+      list.forEach(function (f) {
+        var dist = f.district || '(地区不明)';
+        if (dist !== lastDistrict) {
+          lastDistrict = dist;
+          var gr = document.createElement('tr'); gr.className = 'group';
+          gr.innerHTML = '<td colspan="6">' + esc(dist) + '</td>';
+          rowsEl.appendChild(gr);
+        }
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + esc(f.management_no) + '</td>' +
+          '<td>' + esc(f.office_name) + '</td>' +
+          '<td>' + esc(f.district) + '</td>' +
+          '<td>' + esc(f.expiry_date) + '</td>' +
+          '<td>' + esc(f.closed_days) + '</td>' +
+          '<td>' + esc(f.equipment_type) + '</td>';
+        rowsEl.appendChild(tr);
+      });
+      if (list.length === 0) rowsEl.innerHTML = '<tr><td colspan="6" class="status">該当する工場がありません</td></tr>';
+      countEl.textContent = list.length + '件 / 全' + allFactories.length + '件';
+    }
+
+    function setStatus(msg, isErr) {
+      rowsEl.innerHTML = '<tr><td colspan="6" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      countEl.textContent = '';
+    }
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;' }[c]; }); }
+
+    document.getElementById('reload').addEventListener('click', load);
+    searchInput.addEventListener('input', render);
+    districtSelect.addEventListener('change', render);
+
+    // ---- タブ切り替え ----
+    function switchTab(name) {
+      var tabs = document.querySelectorAll('.tab');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle('on', tabs[i].getAttribute('data-tab') === name);
+      }
+      document.getElementById('panel-list').hidden = (name !== 'list');
+      document.getElementById('panel-gen').hidden = (name !== 'gen');
+    }
+    var tabBtns = document.querySelectorAll('.tab');
+    for (var ti = 0; ti < tabBtns.length; ti++) {
+      tabBtns[ti].addEventListener('click', function () { switchTab(this.getAttribute('data-tab')); });
+    }
+
+    // ---- スケジュール作成 ----
+    function genStatus(msg, isErr) {
+      genRowsEl.innerHTML = '<tr><td colspan="7" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      genInfoEl.textContent = '';
+    }
+    async function generate() {
+      var base = apiUrl();
+      if (!base) { genStatus('先に上部でURLを設定してください', true); return; }
+      if (!apiToken()) { genStatus('先に上部で合言葉を入力してください', true); return; }
+      var date = genDateInput.value;
+      if (!date) { genStatus('校正日を選んでください', true); return; }
+      genStatus('作成中...');
+      try {
+        var url = base + '?action=generate&date=' + encodeURIComponent(date) + '&token=' + encodeURIComponent(apiToken());
+        if (genDistrictSelect.value) url += '&district=' + encodeURIComponent(genDistrictSelect.value);
+        var res = await fetch(url);
+        var data = await res.json();
+        if (data.error) { genStatus('エラー: ' + data.error, true); return; }
+        renderGen(data);
+      } catch (e) {
+        genStatus('通信に失敗しました: ' + e, true);
+      }
+    }
+    function renderGen(data) {
+      var vs = data.visits || [];
+      if (vs.length === 0) { genStatus(data.message || 'この日に組める工場がありませんでした', false); return; }
+      genRowsEl.innerHTML = '';
+      vs.forEach(function (v) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + v.sequence_no + '</td>' +
+          '<td>' + esc(v.planned_start) + '〜' + esc(v.planned_end) + '</td>' +
+          '<td>' + esc(v.office_name) + '</td>' +
+          '<td>' + esc(v.district) + '</td>' +
+          '<td>' + (v.distance_km != null ? esc(v.distance_km) + 'km' : '-') + '</td>' +
+          '<td>' + esc(v.expiry_date) + '</td>' +
+          '<td class="warn">' + esc((v.warnings || []).join(' ')) + '</td>';
+        genRowsEl.appendChild(tr);
+      });
+      genInfoEl.textContent = '地区「' + esc(data.district || '') + '」で ' + vs.length + ' 件を組みました（候補 ' + (data.considered || vs.length) + ' 件から）';
+    }
+    genBtn.addEventListener('click', generate);
+    try { genDateInput.value = new Date().toISOString().slice(0, 10); } catch (e) {}
+
+    if (apiInput.value && tokenInput.value) load();
+  </script>
+</body>
+</html>
