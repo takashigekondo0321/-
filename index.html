@@ -30,6 +30,7 @@
     .warn { color: #b45309; font-weight: 600; }
     label.fld { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; }
     .editbtn { background: #fff; color: #2563eb; border: 1px solid #93c5fd; padding: 3px 10px; font-size: 12px; }
+    td.names { white-space: normal; min-width: 320px; line-height: 1.7; }
     #editOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
     #editOverlay[hidden] { display: none; }
     #editCard { background: #fff; border-radius: 12px; padding: 18px; max-width: 560px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
@@ -78,33 +79,30 @@
 
     <section id="panel-gen" hidden>
       <div class="toolbar">
-        <label class="fld">校正日<input id="genDate" type="date" /></label>
-        <select id="genDistrict"><option value="">自動（最も切迫した地区）</option></select>
-        <button id="genBtn" type="button">スケジュール作成</button>
+        <label class="fld">開始日<input id="genDate" type="date" /></label>
+        <button id="genBtn" type="button">1か月分の日程を作成</button>
       </div>
+      <p class="muted" id="genInfo" style="margin-top:0"></p>
       <div class="card">
         <table>
           <thead>
-            <tr><th>順</th><th>時刻</th><th>事業所名</th><th>地区</th><th>距離</th><th>満了日</th><th>注意</th></tr>
+            <tr><th>日付</th><th>曜</th><th>班</th><th>地区</th><th>件数</th><th>経路</th><th>訪問先（事業所名）</th></tr>
           </thead>
-          <tbody id="genRows"><tr><td colspan="7" class="status">校正日を選んで「スケジュール作成」を押してください</td></tr></tbody>
+          <tbody id="genRows"><tr><td colspan="7" class="status">開始日を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
         </table>
       </div>
-      <p class="muted" id="genInfo"></p>
     </section>
 
     <section id="panel-annual" hidden>
       <div class="toolbar">
-        <label class="fld">開始日<input id="annStart" type="date" /></label>
-        <label class="fld">終了日<input id="annEnd" type="date" /></label>
-        <button id="annBtn" type="button">年間計画を作成</button>
+        <button id="annBtn" type="button">年間計画を作成（今日から1年分）</button>
       </div>
       <p class="muted" style="margin-top:0">会社の休日は、スプレッドシートに「<b>休日</b>」シートを作り日付を入れると自動で除外されます（未作成なら土日だけを休みとして計算）。</p>
       <p class="muted" id="annSummary"></p>
       <div class="card">
         <table>
-          <thead><tr><th>日付</th><th>曜</th><th>地区</th><th>件数</th><th>訪問先（事業所名）</th></tr></thead>
-          <tbody id="annRows"><tr><td colspan="5" class="status">期間を選んで「年間計画を作成」を押してください</td></tr></tbody>
+          <thead><tr><th>日付</th><th>曜</th><th>班</th><th>地区</th><th>件数</th><th>訪問先（事業所名）</th></tr></thead>
+          <tbody id="annRows"><tr><td colspan="6" class="status">「年間計画を作成」を押してください</td></tr></tbody>
         </table>
       </div>
       <div id="annUnsched"></div>
@@ -149,14 +147,11 @@
 
     // スケジュール作成タブ用
     var genDateInput = document.getElementById('genDate');
-    var genDistrictSelect = document.getElementById('genDistrict');
     var genRowsEl = document.getElementById('genRows');
     var genInfoEl = document.getElementById('genInfo');
     var genBtn = document.getElementById('genBtn');
 
     // 年間計画タブ用
-    var annStart = document.getElementById('annStart');
-    var annEnd = document.getElementById('annEnd');
     var annBtn = document.getElementById('annBtn');
     var annRows = document.getElementById('annRows');
     var annSummary = document.getElementById('annSummary');
@@ -206,16 +201,6 @@
         districtSelect.appendChild(o);
       });
       districtSelect.value = current;
-
-      // スケジュール作成タブの地区プルダウンにも同じ一覧を反映（先頭は「自動」）
-      var curG = genDistrictSelect.value;
-      genDistrictSelect.innerHTML = '<option value="">自動（最も切迫した地区）</option>';
-      Object.keys(counts).sort().forEach(function (d) {
-        var o = document.createElement('option');
-        o.value = d; o.textContent = d + '（' + counts[d] + '）';
-        genDistrictSelect.appendChild(o);
-      });
-      genDistrictSelect.value = curG;
     }
 
     function render() {
@@ -268,7 +253,7 @@
 
     // ---- タブ切り替え ----
     function switchTab(name) {
-      var tabs = document.querySelectorAll('.tab');
+      var tabs = document.querySelectorAll('.tabs .tab');
       for (var i = 0; i < tabs.length; i++) {
         tabs[i].classList.toggle('on', tabs[i].getAttribute('data-tab') === name);
       }
@@ -276,12 +261,47 @@
       document.getElementById('panel-gen').hidden = (name !== 'gen');
       document.getElementById('panel-annual').hidden = (name !== 'annual');
     }
-    var tabBtns = document.querySelectorAll('.tab');
+    var tabBtns = document.querySelectorAll('.tabs .tab');
     for (var ti = 0; ti < tabBtns.length; ti++) {
       tabBtns[ti].addEventListener('click', function () { switchTab(this.getAttribute('data-tab')); });
     }
 
-    // ---- スケジュール作成 ----
+    // ---- 共通: 週ごとに区切って計画を表に描く（withMap=trueで経路リンク列あり）----
+    function renderPlanRows(days, rowsTarget, withMap) {
+      var cols = withMap ? 7 : 6;
+      if (days.length === 0) {
+        rowsTarget.innerHTML = '<tr><td colspan="' + cols + '" class="status">この期間に組める工場がありませんでした</td></tr>';
+        return;
+      }
+      rowsTarget.innerHTML = '';
+      var TEAM_CHARS = 'ABCDE';   // 1→A班, 2→B班 ...
+      var lastWeek = null;
+      days.forEach(function (d) {
+        var wk = weekRangeLabel(d.date);
+        if (wk !== lastWeek) {
+          lastWeek = wk;
+          var gr = document.createElement('tr');
+          gr.className = 'group';
+          gr.innerHTML = '<td colspan="' + cols + '">📅 ' + esc(wk) + '</td>';
+          rowsTarget.appendChild(gr);
+        }
+        var teamLabel = (TEAM_CHARS.charAt((d.team || 1) - 1) || d.team) + '班';
+        var md = d.date.slice(5).replace('-', '/');   // 07-08 → 07/08
+        var mapCell = '';
+        if (withMap) {
+          var mUrl = mapsRouteUrl(d.visits);
+          mapCell = '<td>' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') + '</td>';
+        }
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + esc(md) + '</td><td>' + esc(d.weekday) + '</td><td>' + esc(teamLabel) + '</td>' +
+          '<td>' + esc(d.district) + '</td><td>' + d.count + '</td>' + mapCell +
+          '<td class="names">' + esc(d.visits.map(function (v) { return v.office_name; }).join('、')) + '</td>';
+        rowsTarget.appendChild(tr);
+      });
+    }
+
+    // ---- スケジュール作成（1か月分・週区切り・経路リンク付き）----
     function genStatus(msg, isErr) {
       genRowsEl.innerHTML = '<tr><td colspan="7" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
       genInfoEl.textContent = '';
@@ -290,52 +310,73 @@
       var base = apiUrl();
       if (!base) { genStatus('先に上部でURLを設定してください', true); return; }
       if (!apiToken()) { genStatus('先に上部で合言葉を入力してください', true); return; }
-      var date = genDateInput.value;
-      if (!date) { genStatus('校正日を選んでください', true); return; }
-      genStatus('作成中...');
+      var s = genDateInput.value;
+      if (!s) { genStatus('開始日を選んでください', true); return; }
+      // 終了日 = 開始日の1か月後の前日（月末開始などで翌月に同じ日が無い場合は翌月末まで）
+      var sp = s.split('-');
+      var y0 = Number(sp[0]), m0 = Number(sp[1]) - 1, d0 = Number(sp[2]);
+      var cand = new Date(y0, m0 + 1, d0).getTime() - 86400000;      // 同日翌月の前日
+      var lastNext = new Date(y0, m0 + 2, 0).getTime();              // 翌月の末日
+      var ed = new Date(Math.min(cand, lastNext));
+      var e = ed.getFullYear() + '-' + ('0' + (ed.getMonth() + 1)).slice(-2) + '-' + ('0' + ed.getDate()).slice(-2);
+      genStatus('作成中...（数秒かかります）');
       try {
-        var url = base + '?action=generate&date=' + encodeURIComponent(date) + '&token=' + encodeURIComponent(apiToken());
-        if (genDistrictSelect.value) url += '&district=' + encodeURIComponent(genDistrictSelect.value);
+        var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
         var res = await fetch(url);
         var data = await res.json();
         if (data.error) { genStatus('エラー: ' + data.error, true); return; }
-        renderGen(data);
-      } catch (e) {
-        genStatus('通信に失敗しました: ' + e, true);
+        genInfoEl.textContent = s + ' 〜 ' + e + '：のべ出動 ' + data.scheduled_days + '班・日 ／ 総訪問 ' + data.total_visits + '件' +
+          (data.unscheduled_count > 0 ? ' ／ ⚠ この期間に満了なのに未割当 ' + data.unscheduled_count + '件（年間計画タブで確認）' : '');
+        renderPlanRows(data.days || [], genRowsEl, true);
+      } catch (err) {
+        genStatus('通信に失敗しました: ' + err, true);
       }
-    }
-    function renderGen(data) {
-      var vs = data.visits || [];
-      if (vs.length === 0) { genStatus(data.message || 'この日に組める工場がありませんでした', false); return; }
-      genRowsEl.innerHTML = '';
-      vs.forEach(function (v) {
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td>' + v.sequence_no + '</td>' +
-          '<td>' + esc(v.planned_start) + '〜' + esc(v.planned_end) + '</td>' +
-          '<td>' + esc(v.office_name) + '</td>' +
-          '<td>' + esc(v.district) + '</td>' +
-          '<td>' + (v.distance_km != null ? esc(v.distance_km) + 'km' : '-') + '</td>' +
-          '<td>' + esc(v.expiry_date) + '</td>' +
-          '<td class="warn">' + esc((v.warnings || []).join(' ')) + '</td>';
-        genRowsEl.appendChild(tr);
-      });
-      genInfoEl.textContent = '地区「' + esc(data.district || '') + '」で ' + vs.length + ' 件を組みました（候補 ' + (data.considered || vs.length) + ' 件から）';
     }
     genBtn.addEventListener('click', generate);
     try { genDateInput.value = new Date().toISOString().slice(0, 10); } catch (e) {}
 
     // ---- 年間計画 ----
+    // 1日のルートをGoogleマップの経路URLにする（出発: 名古屋支所）。
+    // 緯度経度があればそれを、無ければ住所を使う。
+    var BRANCH_POINT = '35.1815,136.9066'; // 名古屋支所（Code.gsのGENと同じ値）
+    function mapsRouteUrl(visits) {
+      var pts = (visits || []).map(function (v) {
+        if (v.lat != null && v.lng != null && String(v.lat) !== '' && !isNaN(Number(v.lat))) return v.lat + ',' + v.lng;
+        return v.address || v.office_name || '';
+      }).filter(function (p) { return p; });
+      if (pts.length === 0) return '';
+      var dest = pts[pts.length - 1];
+      var way = pts.slice(0, -1);
+      var url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving' +
+        '&origin=' + encodeURIComponent(BRANCH_POINT) +
+        '&destination=' + encodeURIComponent(dest);
+      if (way.length > 0) url += '&waypoints=' + encodeURIComponent(way.join('|'));
+      return url;
+    }
+
+    // 'YYYY-MM-DD' から「その週（月〜金）」のラベルを作る（例: 2026/7/6（月）〜 7/10（金）の週）
+    function weekRangeLabel(iso) {
+      var p = iso.split('-');
+      var dt = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+      var offset = (dt.getDay() + 6) % 7;          // 月曜=0 になるように
+      var mon = new Date(dt.getTime() - offset * 86400000);
+      var fri = new Date(mon.getTime() + 4 * 86400000);
+      function md(x) { return (x.getMonth() + 1) + '/' + x.getDate(); }
+      return mon.getFullYear() + '年 ' + md(mon) + '（月）〜 ' + md(fri) + '（金）の週';
+    }
+
     function annStatus(msg, isErr) {
-      annRows.innerHTML = '<tr><td colspan="5" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      annRows.innerHTML = '<tr><td colspan="6" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
       annSummary.textContent = ''; annUnsched.innerHTML = '';
     }
     async function runAnnual() {
       var base = apiUrl();
       if (!base) { annStatus('先に上部でURLを設定してください', true); return; }
       if (!apiToken()) { annStatus('先に上部で合言葉を入力してください', true); return; }
-      var s = annStart.value, e = annEnd.value;
-      if (!s || !e) { annStatus('開始日と終了日を選んでください', true); return; }
+      // 期間は自動: 今日から1年分
+      var t = new Date();
+      var s = t.toISOString().slice(0, 10);
+      var e = new Date(t.getTime() + 365 * 86400000).toISOString().slice(0, 10);
       annStatus('作成中...（1年分は数秒かかります）');
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
@@ -348,19 +389,9 @@
       }
     }
     function renderAnnual(data) {
-      annSummary.textContent = '稼働日 ' + data.scheduled_days + '日 ／ 総訪問 ' + data.total_visits + '件 ／ 未割当 ' + data.unscheduled_count + '件（会社休日 ' + data.holidays_count + '日を除外）';
+      annSummary.textContent = 'のべ出動 ' + data.scheduled_days + '班・日 ／ 総訪問 ' + data.total_visits + '件 ／ 未割当 ' + data.unscheduled_count + '件（会社休日 ' + data.holidays_count + '日を除外）';
       var days = data.days || [];
-      if (days.length === 0) { annRows.innerHTML = '<tr><td colspan="5" class="status">この期間に組める工場がありませんでした</td></tr>'; }
-      else {
-        annRows.innerHTML = '';
-        days.forEach(function (d) {
-          var tr = document.createElement('tr');
-          tr.innerHTML =
-            '<td>' + esc(d.date) + '</td><td>' + esc(d.weekday) + '</td><td>' + esc(d.district) + '</td><td>' + d.count + '</td>' +
-            '<td>' + esc(d.visits.map(function (v) { return v.office_name; }).join('、')) + '</td>';
-          annRows.appendChild(tr);
-        });
-      }
+      renderPlanRows(days, annRows, false);   // 年間計画は経路リンクなし
       var u = data.unscheduled || [];
       if (u.length > 0) {
         var html = '<p class="warn" style="margin-top:14px">⚠ 期間内に満了だが組めなかった工場：' + u.length + '件（要確認）</p>' +
@@ -373,11 +404,6 @@
       } else { annUnsched.innerHTML = ''; }
     }
     annBtn.addEventListener('click', runAnnual);
-    try {
-      var _t = new Date();
-      annStart.value = _t.toISOString().slice(0, 10);
-      annEnd.value = new Date(_t.getTime() + 365 * 86400000).toISOString().slice(0, 10);
-    } catch (e) {}
 
     // ---- 工場の編集 ----
     var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'nth_closed', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes'];
