@@ -29,6 +29,16 @@
     .tab.on { background: #2563eb; color: #fff; border-color: #2563eb; }
     .warn { color: #b45309; font-weight: 600; }
     label.fld { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; }
+    .editbtn { background: #fff; color: #2563eb; border: 1px solid #93c5fd; padding: 3px 10px; font-size: 12px; }
+    #editOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
+    #editOverlay[hidden] { display: none; }
+    #editCard { background: #fff; border-radius: 12px; padding: 18px; max-width: 560px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+    #editCard h3 { margin: 0 0 12px; font-size: 16px; }
+    .egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .ef { display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 3px; }
+    .ef input { font-size: 14px; }
+    .erow { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    @media (max-width: 520px) { .egrid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -58,9 +68,9 @@
       <div class="card">
         <table>
           <thead>
-            <tr><th>管理番号</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th><th>機器</th></tr>
+            <tr><th>管理番号</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th><th>機器</th><th></th></tr>
           </thead>
-          <tbody id="rows"><tr><td colspan="6" class="status">URLと合言葉を設定して読み込んでください</td></tr></tbody>
+          <tbody id="rows"><tr><td colspan="7" class="status">URLと合言葉を設定して読み込んでください</td></tr></tbody>
         </table>
       </div>
       <p class="muted" id="count"></p>
@@ -99,6 +109,31 @@
       </div>
       <div id="annUnsched"></div>
     </section>
+
+    <div id="editOverlay" hidden>
+      <div id="editCard">
+        <h3 id="editTitle">工場を編集</h3>
+        <div class="egrid">
+          <label class="ef">管理番号<input id="ef_mgmt" disabled /></label>
+          <label class="ef">事業所名<input id="ef_office_name" /></label>
+          <label class="ef">満了日<input id="ef_expiry_date" type="date" /></label>
+          <label class="ef">定休日<input id="ef_closed_days" placeholder="例: 火,水" /></label>
+          <label class="ef">第N曜休<input id="ef_nth_closed" placeholder="例: 2火 / 1火;3火" /></label>
+          <label class="ef">機器形態<input id="ef_equipment_type" placeholder="例: CS,BS" /></label>
+          <label class="ef">始業<input id="ef_opening_time" placeholder="例: 09:00" /></label>
+          <label class="ef">終業<input id="ef_closing_time" placeholder="例: 17:30" /></label>
+          <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" /></label>
+          <label class="ef">班ID<input id="ef_default_team_id" /></label>
+          <label class="ef">コース<input id="ef_course_group" /></label>
+          <label class="ef" style="grid-column:1/-1">特記事項（例: 午前希望 / 午後希望 / 31日不可 / 月末不可 / 21日以降希望 / 週末希望 / 8月希望）<input id="ef_notes" placeholder="午前希望 31日不可 など（スペース区切り）" /></label>
+        </div>
+        <p class="muted" id="editMsg"></p>
+        <div class="erow">
+          <button type="button" id="editCancel" class="tab">キャンセル</button>
+          <button type="button" id="editSave">保存</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -203,7 +238,7 @@
         if (dist !== lastDistrict) {
           lastDistrict = dist;
           var gr = document.createElement('tr'); gr.className = 'group';
-          gr.innerHTML = '<td colspan="6">' + esc(dist) + '</td>';
+          gr.innerHTML = '<td colspan="7">' + esc(dist) + '</td>';
           rowsEl.appendChild(gr);
         }
         var tr = document.createElement('tr');
@@ -213,15 +248,16 @@
           '<td>' + esc(f.district) + '</td>' +
           '<td>' + esc(f.expiry_date) + '</td>' +
           '<td>' + esc(f.closed_days) + '</td>' +
-          '<td>' + esc(f.equipment_type) + '</td>';
+          '<td>' + esc(f.equipment_type) + '</td>' +
+          '<td><button type="button" class="editbtn" data-mgmt="' + esc(f.management_no) + '">編集</button></td>';
         rowsEl.appendChild(tr);
       });
-      if (list.length === 0) rowsEl.innerHTML = '<tr><td colspan="6" class="status">該当する工場がありません</td></tr>';
+      if (list.length === 0) rowsEl.innerHTML = '<tr><td colspan="7" class="status">該当する工場がありません</td></tr>';
       countEl.textContent = list.length + '件 / 全' + allFactories.length + '件';
     }
 
     function setStatus(msg, isErr) {
-      rowsEl.innerHTML = '<tr><td colspan="6" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="7" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
       countEl.textContent = '';
     }
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;' }[c]; }); }
@@ -342,6 +378,69 @@
       annStart.value = _t.toISOString().slice(0, 10);
       annEnd.value = new Date(_t.getTime() + 365 * 86400000).toISOString().slice(0, 10);
     } catch (e) {}
+
+    // ---- 工場の編集 ----
+    var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'nth_closed', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes'];
+    var editOverlay = document.getElementById('editOverlay');
+    var editMsg = document.getElementById('editMsg');
+    var editingMgmt = null;
+
+    function openEdit(mgmt) {
+      var f = null;
+      for (var i = 0; i < allFactories.length; i++) {
+        if (String(allFactories[i].management_no) === String(mgmt)) { f = allFactories[i]; break; }
+      }
+      if (!f) return;
+      editingMgmt = String(mgmt);
+      document.getElementById('ef_mgmt').value = f.management_no || '';
+      for (var k = 0; k < EDIT_FIELDS.length; k++) {
+        var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
+        if (el) el.value = (f[EDIT_FIELDS[k]] == null ? '' : String(f[EDIT_FIELDS[k]]));
+      }
+      editMsg.textContent = '';
+      editOverlay.hidden = false;
+    }
+    function closeEdit() { editOverlay.hidden = true; editingMgmt = null; }
+
+    async function saveEdit() {
+      if (!editingMgmt) return;
+      var base = apiUrl();
+      if (!base || !apiToken()) { editMsg.textContent = 'URLと合言葉が必要です（上部で設定）'; return; }
+      editMsg.textContent = '保存中...';
+      var url = base + '?action=update&token=' + encodeURIComponent(apiToken()) + '&mgmt=' + encodeURIComponent(editingMgmt);
+      var changes = {};
+      for (var k = 0; k < EDIT_FIELDS.length; k++) {
+        var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
+        var v = el ? el.value : '';
+        changes[EDIT_FIELDS[k]] = v;
+        url += '&' + EDIT_FIELDS[k] + '=' + encodeURIComponent(v);
+      }
+      url += '&_=' + (new Date().getTime()); // キャッシュ回避
+      try {
+        var res = await fetch(url);
+        var data = await res.json();
+        if (data.error) { editMsg.textContent = 'エラー: ' + data.error; return; }
+        // 画面側のデータも更新して即反映
+        for (var i = 0; i < allFactories.length; i++) {
+          if (String(allFactories[i].management_no) === editingMgmt) {
+            for (var kk = 0; kk < EDIT_FIELDS.length; kk++) allFactories[i][EDIT_FIELDS[kk]] = changes[EDIT_FIELDS[kk]];
+            break;
+          }
+        }
+        render();
+        closeEdit();
+      } catch (e) {
+        editMsg.textContent = '通信に失敗しました: ' + e;
+      }
+    }
+
+    rowsEl.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t && t.classList && t.classList.contains('editbtn')) openEdit(t.getAttribute('data-mgmt'));
+    });
+    document.getElementById('editCancel').addEventListener('click', closeEdit);
+    document.getElementById('editSave').addEventListener('click', saveEdit);
+    editOverlay.addEventListener('click', function (ev) { if (ev.target === editOverlay) closeEdit(); });
 
     if (apiInput.value && tokenInput.value) load();
   </script>
