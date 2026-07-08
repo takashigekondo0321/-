@@ -46,6 +46,7 @@
     <div class="tabs">
       <button class="tab on" data-tab="list" type="button">工場一覧</button>
       <button class="tab" data-tab="gen" type="button">スケジュール作成</button>
+      <button class="tab" data-tab="annual" type="button">年間計画</button>
     </div>
 
     <section id="panel-list">
@@ -81,6 +82,23 @@
       </div>
       <p class="muted" id="genInfo"></p>
     </section>
+
+    <section id="panel-annual" hidden>
+      <div class="toolbar">
+        <label class="fld">開始日<input id="annStart" type="date" /></label>
+        <label class="fld">終了日<input id="annEnd" type="date" /></label>
+        <button id="annBtn" type="button">年間計画を作成</button>
+      </div>
+      <p class="muted" style="margin-top:0">会社の休日は、スプレッドシートに「<b>休日</b>」シートを作り日付を入れると自動で除外されます（未作成なら土日だけを休みとして計算）。</p>
+      <p class="muted" id="annSummary"></p>
+      <div class="card">
+        <table>
+          <thead><tr><th>日付</th><th>曜</th><th>地区</th><th>件数</th><th>訪問先（事業所名）</th></tr></thead>
+          <tbody id="annRows"><tr><td colspan="5" class="status">期間を選んで「年間計画を作成」を押してください</td></tr></tbody>
+        </table>
+      </div>
+      <div id="annUnsched"></div>
+    </section>
   </main>
 
   <script>
@@ -100,6 +118,14 @@
     var genRowsEl = document.getElementById('genRows');
     var genInfoEl = document.getElementById('genInfo');
     var genBtn = document.getElementById('genBtn');
+
+    // 年間計画タブ用
+    var annStart = document.getElementById('annStart');
+    var annEnd = document.getElementById('annEnd');
+    var annBtn = document.getElementById('annBtn');
+    var annRows = document.getElementById('annRows');
+    var annSummary = document.getElementById('annSummary');
+    var annUnsched = document.getElementById('annUnsched');
 
     apiInput.value = localStorage.getItem(LS_KEY) || '';
     tokenInput.value = localStorage.getItem(LS_TOKEN) || '';
@@ -212,6 +238,7 @@
       }
       document.getElementById('panel-list').hidden = (name !== 'list');
       document.getElementById('panel-gen').hidden = (name !== 'gen');
+      document.getElementById('panel-annual').hidden = (name !== 'annual');
     }
     var tabBtns = document.querySelectorAll('.tab');
     for (var ti = 0; ti < tabBtns.length; ti++) {
@@ -261,6 +288,60 @@
     }
     genBtn.addEventListener('click', generate);
     try { genDateInput.value = new Date().toISOString().slice(0, 10); } catch (e) {}
+
+    // ---- 年間計画 ----
+    function annStatus(msg, isErr) {
+      annRows.innerHTML = '<tr><td colspan="5" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      annSummary.textContent = ''; annUnsched.innerHTML = '';
+    }
+    async function runAnnual() {
+      var base = apiUrl();
+      if (!base) { annStatus('先に上部でURLを設定してください', true); return; }
+      if (!apiToken()) { annStatus('先に上部で合言葉を入力してください', true); return; }
+      var s = annStart.value, e = annEnd.value;
+      if (!s || !e) { annStatus('開始日と終了日を選んでください', true); return; }
+      annStatus('作成中...（1年分は数秒かかります）');
+      try {
+        var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
+        var res = await fetch(url);
+        var data = await res.json();
+        if (data.error) { annStatus('エラー: ' + data.error, true); return; }
+        renderAnnual(data);
+      } catch (err) {
+        annStatus('通信に失敗しました: ' + err, true);
+      }
+    }
+    function renderAnnual(data) {
+      annSummary.textContent = '稼働日 ' + data.scheduled_days + '日 ／ 総訪問 ' + data.total_visits + '件 ／ 未割当 ' + data.unscheduled_count + '件（会社休日 ' + data.holidays_count + '日を除外）';
+      var days = data.days || [];
+      if (days.length === 0) { annRows.innerHTML = '<tr><td colspan="5" class="status">この期間に組める工場がありませんでした</td></tr>'; }
+      else {
+        annRows.innerHTML = '';
+        days.forEach(function (d) {
+          var tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td>' + esc(d.date) + '</td><td>' + esc(d.weekday) + '</td><td>' + esc(d.district) + '</td><td>' + d.count + '</td>' +
+            '<td>' + esc(d.visits.map(function (v) { return v.office_name; }).join('、')) + '</td>';
+          annRows.appendChild(tr);
+        });
+      }
+      var u = data.unscheduled || [];
+      if (u.length > 0) {
+        var html = '<p class="warn" style="margin-top:14px">⚠ 期間内に満了だが組めなかった工場：' + u.length + '件（要確認）</p>' +
+          '<div class="card"><table><thead><tr><th>管理番号</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th></tr></thead><tbody>';
+        u.forEach(function (f) {
+          html += '<tr><td>' + esc(f.management_no) + '</td><td>' + esc(f.office_name) + '</td><td>' + esc(f.district) + '</td><td>' + esc(f.expiry_date) + '</td><td>' + esc(f.closed_days) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+        annUnsched.innerHTML = html;
+      } else { annUnsched.innerHTML = ''; }
+    }
+    annBtn.addEventListener('click', runAnnual);
+    try {
+      var _t = new Date();
+      annStart.value = _t.toISOString().slice(0, 10);
+      annEnd.value = new Date(_t.getTime() + 365 * 86400000).toISOString().slice(0, 10);
+    } catch (e) {}
 
     if (apiInput.value && tokenInput.value) load();
   </script>
