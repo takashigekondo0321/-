@@ -50,6 +50,7 @@
     <p>名古屋支所 校正業務</p>
   </header>
   <main>
+    <p id="configToggle" hidden style="font-size:12px; color:#64748b; margin:0 0 10px; cursor:pointer;">⚙ 接続設定済み（クリックで表示・変更）</p>
     <div id="config">
       <b>初回設定：</b>Apps ScriptのウェブアプリURL（/exec で終わるもの）と、Code.gsに設定した<b>合言葉</b>を入力してください。ブラウザにのみ記憶され、次回から不要です（この2つは他人に教えない・公開場所に貼らないでください）。
       <input id="apiUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" />
@@ -66,14 +67,19 @@
       <div class="toolbar">
         <input id="search" placeholder="管理番号・工場名で検索" style="flex:1; min-width:180px;" />
         <select id="district"><option value="">全ての地区</option></select>
+        <select id="checkFilter">
+          <option value="">確認状態: すべて</option>
+          <option value="unchecked">未確認のみ</option>
+          <option value="checked">確認済みのみ</option>
+        </select>
         <button id="reload" type="button">再読み込み</button>
       </div>
       <div class="card">
         <table>
           <thead>
-            <tr><th>管理番号</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th><th>機器</th><th></th></tr>
+            <tr><th>管理番号</th><th>確認</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th><th>機器</th><th></th></tr>
           </thead>
-          <tbody id="rows"><tr><td colspan="7" class="status">URLと合言葉を設定して読み込んでください</td></tr></tbody>
+          <tbody id="rows"><tr><td colspan="8" class="status">URLと合言葉を設定して読み込んでください</td></tr></tbody>
         </table>
       </div>
       <p class="muted" id="count"></p>
@@ -126,6 +132,10 @@
           <label class="ef">班ID<input id="ef_default_team_id" /></label>
           <label class="ef">コース<input id="ef_course_group" /></label>
           <label class="ef" style="grid-column:1/-1">特記事項（例: 午前希望 / 午後希望 / 31日不可 / 月末不可 / 21日以降希望 / 週末希望 / 8月希望）<input id="ef_notes" placeholder="午前希望 31日不可 など（スペース区切り）" /></label>
+          <label class="ef" style="grid-column:1/-1; flex-direction:row; align-items:center; gap:8px; background:#eafaf0; border:1px solid #b7e4c7; border-radius:8px; padding:8px 10px;">
+            <input type="checkbox" id="ef_checked" style="width:auto;" />
+            <span>✅ <b>入力確認済み</b>にする（チェックして保存すると確認日が記録され、一覧に✅が付きます）<span id="ef_checkedDate" style="color:#64748b;"></span></span>
+          </label>
         </div>
         <p class="muted" id="editMsg"></p>
         <div class="erow">
@@ -144,6 +154,7 @@
     var tokenInput = document.getElementById('apiToken');
     var searchInput = document.getElementById('search');
     var districtSelect = document.getElementById('district');
+    var checkFilterSelect = document.getElementById('checkFilter');
     var rowsEl = document.getElementById('rows');
     var countEl = document.getElementById('count');
     var allFactories = [];
@@ -162,6 +173,18 @@
 
     apiInput.value = localStorage.getItem(LS_KEY) || '';
     tokenInput.value = localStorage.getItem(LS_TOKEN) || '';
+
+    // 設定済みなら初回設定ボックスを折りたたむ（クリックで再表示）
+    var configBox = document.getElementById('config');
+    var configToggle = document.getElementById('configToggle');
+    if (apiInput.value && tokenInput.value) {
+      configBox.hidden = true;
+      configToggle.hidden = false;
+    }
+    configToggle.addEventListener('click', function () {
+      configBox.hidden = false;
+      configToggle.hidden = true;
+    });
 
     function apiUrl() {
       var u = apiInput.value.trim();
@@ -206,11 +229,16 @@
       districtSelect.value = current;
     }
 
+    function isChecked(f) { return !!String(f.checked_date == null ? '' : f.checked_date).trim(); }
+
     function render() {
       var s = searchInput.value.trim();
       var d = districtSelect.value;
+      var cf = checkFilterSelect.value;   // '' | unchecked | checked
       var list = allFactories.filter(function (f) {
         if (d && (f.district || '(地区不明)') !== d) return false;
+        if (cf === 'unchecked' && isChecked(f)) return false;
+        if (cf === 'checked' && !isChecked(f)) return false;
         if (s && String(f.management_no).indexOf(s) === -1 && String(f.office_name).indexOf(s) === -1) return false;
         return true;
       });
@@ -226,12 +254,16 @@
         if (dist !== lastDistrict) {
           lastDistrict = dist;
           var gr = document.createElement('tr'); gr.className = 'group';
-          gr.innerHTML = '<td colspan="7">' + esc(dist) + '</td>';
+          gr.innerHTML = '<td colspan="8">' + esc(dist) + '</td>';
           rowsEl.appendChild(gr);
         }
+        var checkedMark = isChecked(f)
+          ? '<span title="' + esc(f.checked_date) + '">✅</span>'
+          : '';
         var tr = document.createElement('tr');
         tr.innerHTML =
           '<td>' + esc(f.management_no) + '</td>' +
+          '<td style="text-align:center">' + checkedMark + '</td>' +
           '<td>' + esc(f.office_name) + '</td>' +
           '<td>' + esc(f.district) + '</td>' +
           '<td>' + esc(f.expiry_date) + '</td>' +
@@ -240,12 +272,13 @@
           '<td><button type="button" class="editbtn" data-mgmt="' + esc(f.management_no) + '">編集</button></td>';
         rowsEl.appendChild(tr);
       });
-      if (list.length === 0) rowsEl.innerHTML = '<tr><td colspan="7" class="status">該当する工場がありません</td></tr>';
-      countEl.textContent = list.length + '件 / 全' + allFactories.length + '件';
+      if (list.length === 0) rowsEl.innerHTML = '<tr><td colspan="8" class="status">該当する工場がありません</td></tr>';
+      var checkedTotal = allFactories.filter(isChecked).length;
+      countEl.textContent = list.length + '件 / 全' + allFactories.length + '件　（✅入力確認済み ' + checkedTotal + '件・残り ' + (allFactories.length - checkedTotal) + '件）';
     }
 
     function setStatus(msg, isErr) {
-      rowsEl.innerHTML = '<tr><td colspan="7" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="8" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
       countEl.textContent = '';
     }
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;' }[c]; }); }
@@ -253,6 +286,7 @@
     document.getElementById('reload').addEventListener('click', load);
     searchInput.addEventListener('input', render);
     districtSelect.addEventListener('change', render);
+    checkFilterSelect.addEventListener('change', render);
 
     // ---- タブ切り替え ----
     function switchTab(name) {
@@ -501,6 +535,9 @@
         var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
         if (el) el.value = (f[EDIT_FIELDS[k]] == null ? '' : String(f[EDIT_FIELDS[k]]));
       }
+      var hasCheck = !!String(f.checked_date == null ? '' : f.checked_date).trim();
+      document.getElementById('ef_checked').checked = hasCheck;
+      document.getElementById('ef_checkedDate').textContent = hasCheck ? '（確認日: ' + String(f.checked_date).trim() + '）' : '';
       editMsg.textContent = '';
       editOverlay.hidden = false;
     }
@@ -519,6 +556,18 @@
         changes[EDIT_FIELDS[k]] = v;
         url += '&' + EDIT_FIELDS[k] + '=' + encodeURIComponent(v);
       }
+      // 入力確認済みチェック: ONなら確認日を記録（既に日付があれば保持）、OFFなら消す
+      var newChecked = '';
+      if (document.getElementById('ef_checked').checked) {
+        var f0 = null;
+        for (var fi = 0; fi < allFactories.length; fi++) {
+          if (String(allFactories[fi].management_no) === editingMgmt) { f0 = allFactories[fi]; break; }
+        }
+        var existing = f0 ? String(f0.checked_date == null ? '' : f0.checked_date).trim() : '';
+        newChecked = existing || new Date().toISOString().slice(0, 10);
+      }
+      changes['checked_date'] = newChecked;
+      url += '&checked_date=' + encodeURIComponent(newChecked);
       url += '&_=' + (new Date().getTime()); // キャッシュ回避
       try {
         var res = await fetch(url);
@@ -528,6 +577,7 @@
         for (var i = 0; i < allFactories.length; i++) {
           if (String(allFactories[i].management_no) === editingMgmt) {
             for (var kk = 0; kk < EDIT_FIELDS.length; kk++) allFactories[i][EDIT_FIELDS[kk]] = changes[EDIT_FIELDS[kk]];
+            allFactories[i].checked_date = changes['checked_date'];
             break;
           }
         }
