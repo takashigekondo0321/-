@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>訪問スケジュール作成システム（GAS版・第1段）</title>
+  <title>訪問スケジュール作成システム（林さん専用）</title>
   <style>
     :root { color-scheme: light; }
     body { margin: 0; font-family: system-ui, "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; background: #f1f5f9; color: #1e293b; }
@@ -31,6 +31,8 @@
     label.fld { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; }
     .editbtn { background: #fff; color: #2563eb; border: 1px solid #93c5fd; padding: 3px 10px; font-size: 12px; }
     td.names { white-space: normal; min-width: 320px; line-height: 1.7; }
+    tr.teamrow td { background: #dbeafe; font-weight: 700; color: #1e40af; }
+    tr.daystart td { border-top: 2px solid #94a3b8; }
     #editOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
     #editOverlay[hidden] { display: none; }
     #editCard { background: #fff; border-radius: 12px; padding: 18px; max-width: 560px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
@@ -44,8 +46,8 @@
 </head>
 <body>
   <header>
-    <h1>訪問スケジュール作成システム</h1>
-    <p>名古屋支所 校正業務 ／ GAS版（第1段：工場一覧）</p>
+    <h1>訪問スケジュール作成システム（林さん専用）</h1>
+    <p>名古屋支所 校正業務</p>
   </header>
   <main>
     <div id="config">
@@ -79,16 +81,16 @@
 
     <section id="panel-gen" hidden>
       <div class="toolbar">
-        <label class="fld">開始日<input id="genDate" type="date" /></label>
+        <label class="fld">対象月<select id="genMonth"></select></label>
         <button id="genBtn" type="button">1か月分の日程を作成</button>
       </div>
       <p class="muted" id="genInfo" style="margin-top:0"></p>
       <div class="card">
         <table>
           <thead>
-            <tr><th>日付</th><th>曜</th><th>班</th><th>地区</th><th>件数</th><th>経路</th><th>訪問先（事業所名）</th></tr>
+            <tr><th>校正日</th><th>曜</th><th>時間</th><th>管理番号</th><th>事業所名</th><th>地区</th><th>経路</th></tr>
           </thead>
-          <tbody id="genRows"><tr><td colspan="7" class="status">開始日を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
+          <tbody id="genRows"><tr><td colspan="7" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -127,6 +129,7 @@
         </div>
         <p class="muted" id="editMsg"></p>
         <div class="erow">
+          <button type="button" id="editGeocode" class="tab" title="シートの住所から緯度経度を取得します（新しい工場を追加したとき用）">座標取得</button>
           <button type="button" id="editCancel" class="tab">キャンセル</button>
           <button type="button" id="editSave">保存</button>
         </div>
@@ -146,7 +149,7 @@
     var allFactories = [];
 
     // スケジュール作成タブ用
-    var genDateInput = document.getElementById('genDate');
+    var genMonthSelect = document.getElementById('genMonth');
     var genRowsEl = document.getElementById('genRows');
     var genInfoEl = document.getElementById('genInfo');
     var genBtn = document.getElementById('genBtn');
@@ -301,6 +304,68 @@
       });
     }
 
+    // ---- 紙の日程表スタイル: 週 → 班 → 日（各訪問を1行ずつ、時間つき）----
+    function renderMonthDetail(days, rowsTarget) {
+      if (days.length === 0) {
+        rowsTarget.innerHTML = '<tr><td colspan="7" class="status">この期間に組める工場がありませんでした</td></tr>';
+        return;
+      }
+      rowsTarget.innerHTML = '';
+      var TEAM_CHARS = 'ABCDE';
+      // 週ごとにまとめる（出現順を保持）
+      var weeks = [], wkMap = {};
+      days.forEach(function (d) {
+        var wk = weekRangeLabel(d.date);
+        if (!wkMap[wk]) { wkMap[wk] = []; weeks.push(wk); }
+        wkMap[wk].push(d);
+      });
+      weeks.forEach(function (wk) {
+        var gr = document.createElement('tr');
+        gr.className = 'group';
+        gr.innerHTML = '<td colspan="7">📅 ' + esc(wk) + '</td>';
+        rowsTarget.appendChild(gr);
+
+        // 週の中を班ごとにまとめる（A班→B班→…）
+        var teams = [], tMap = {};
+        wkMap[wk].forEach(function (d) {
+          var t = d.team || 1;
+          if (!tMap[t]) { tMap[t] = []; teams.push(t); }
+          tMap[t].push(d);
+        });
+        teams.sort(function (a, b) { return a - b; });
+
+        teams.forEach(function (t) {
+          var tr0 = document.createElement('tr');
+          tr0.className = 'teamrow';
+          tr0.innerHTML = '<td colspan="7">' + esc((TEAM_CHARS.charAt(t - 1) || t) + '班') + '</td>';
+          rowsTarget.appendChild(tr0);
+
+          tMap[t].sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+          tMap[t].forEach(function (d) {
+            var md = d.date.slice(5).replace('-', '/');
+            var mUrl = mapsRouteUrl(d.visits);
+            var n = d.visits.length;
+            d.visits.forEach(function (v, i) {
+              var tr = document.createElement('tr');
+              if (i === 0) tr.className = 'daystart';
+              var head = (i === 0)
+                ? '<td rowspan="' + n + '">' + esc(md) + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
+                : '';
+              var mapCell = (i === 0)
+                ? '<td rowspan="' + n + '">' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') + '</td>'
+                : '';
+              tr.innerHTML = head +
+                '<td>' + esc(v.planned_start) + '</td>' +
+                '<td>' + esc(v.management_no) + '</td>' +
+                '<td class="names">' + esc(v.office_name) + '</td>' +
+                '<td>' + esc(v.district) + '</td>' + mapCell;
+              rowsTarget.appendChild(tr);
+            });
+          });
+        });
+      });
+    }
+
     // ---- スケジュール作成（1か月分・週区切り・経路リンク付き）----
     function genStatus(msg, isErr) {
       genRowsEl.innerHTML = '<tr><td colspan="7" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
@@ -310,15 +375,17 @@
       var base = apiUrl();
       if (!base) { genStatus('先に上部でURLを設定してください', true); return; }
       if (!apiToken()) { genStatus('先に上部で合言葉を入力してください', true); return; }
-      var s = genDateInput.value;
-      if (!s) { genStatus('開始日を選んでください', true); return; }
-      // 終了日 = 開始日の1か月後の前日（月末開始などで翌月に同じ日が無い場合は翌月末まで）
-      var sp = s.split('-');
-      var y0 = Number(sp[0]), m0 = Number(sp[1]) - 1, d0 = Number(sp[2]);
-      var cand = new Date(y0, m0 + 1, d0).getTime() - 86400000;      // 同日翌月の前日
-      var lastNext = new Date(y0, m0 + 2, 0).getTime();              // 翌月の末日
-      var ed = new Date(Math.min(cand, lastNext));
-      var e = ed.getFullYear() + '-' + ('0' + (ed.getMonth() + 1)).slice(-2) + '-' + ('0' + ed.getDate()).slice(-2);
+      var ym = genMonthSelect.value;               // "YYYY-MM"
+      if (!ym) { genStatus('対象月を選んでください', true); return; }
+      var y0 = Number(ym.split('-')[0]), m0 = Number(ym.split('-')[1]) - 1;
+      var s = ym + '-01';                          // 月の1日から
+      var last = new Date(y0, m0 + 1, 0);          // 月末日
+      // 月末の週が翌月にまたがる場合は、その週の金曜まで延長して翌月分も表示する
+      var dow = last.getDay();                     // 0=日 .. 5=金 6=土
+      if (dow >= 1 && dow <= 4) {                  // 月〜木で終わる月 → 同じ週の金曜まで
+        last = new Date(last.getTime() + (5 - dow) * 86400000);
+      }
+      var e = last.getFullYear() + '-' + ('0' + (last.getMonth() + 1)).slice(-2) + '-' + ('0' + last.getDate()).slice(-2);
       genStatus('作成中...（数秒かかります）');
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
@@ -327,13 +394,24 @@
         if (data.error) { genStatus('エラー: ' + data.error, true); return; }
         genInfoEl.textContent = s + ' 〜 ' + e + '：のべ出動 ' + data.scheduled_days + '班・日 ／ 総訪問 ' + data.total_visits + '件' +
           (data.unscheduled_count > 0 ? ' ／ ⚠ この期間に満了なのに未割当 ' + data.unscheduled_count + '件（年間計画タブで確認）' : '');
-        renderPlanRows(data.days || [], genRowsEl, true);
+        renderMonthDetail(data.days || [], genRowsEl);
       } catch (err) {
         genStatus('通信に失敗しました: ' + err, true);
       }
     }
     genBtn.addEventListener('click', generate);
-    try { genDateInput.value = new Date().toISOString().slice(0, 10); } catch (e) {}
+    // 対象月プルダウン: 今月から12か月分（初期値=今月）
+    (function () {
+      var t = new Date();
+      for (var i = 0; i < 12; i++) {
+        var d = new Date(t.getFullYear(), t.getMonth() + i, 1);
+        var val = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+        var o = document.createElement('option');
+        o.value = val;
+        o.textContent = d.getFullYear() + '年' + (d.getMonth() + 1) + '月';
+        genMonthSelect.appendChild(o);
+      }
+    })();
 
     // ---- 年間計画 ----
     // 1日のルートをGoogleマップの経路URLにする（出発: 名古屋支所）。
@@ -466,6 +544,26 @@
     });
     document.getElementById('editCancel').addEventListener('click', closeEdit);
     document.getElementById('editSave').addEventListener('click', saveEdit);
+    document.getElementById('editGeocode').addEventListener('click', async function () {
+      if (!editingMgmt) return;
+      var base = apiUrl();
+      if (!base || !apiToken()) { editMsg.textContent = 'URLと合言葉が必要です（上部で設定）'; return; }
+      editMsg.textContent = '座標を取得中...';
+      try {
+        var res = await fetch(base + '?action=geocode&token=' + encodeURIComponent(apiToken()) + '&mgmt=' + encodeURIComponent(editingMgmt) + '&_=' + (new Date().getTime()));
+        var data = await res.json();
+        if (data.error) { editMsg.textContent = 'エラー: ' + data.error; return; }
+        // 画面側データにも反映
+        for (var i = 0; i < allFactories.length; i++) {
+          if (String(allFactories[i].management_no) === editingMgmt) {
+            allFactories[i].lat = data.lat; allFactories[i].lng = data.lng; break;
+          }
+        }
+        editMsg.textContent = '座標を取得して保存しました（緯度 ' + data.lat + ' / 経度 ' + data.lng + '）';
+      } catch (e) {
+        editMsg.textContent = '通信に失敗しました: ' + e;
+      }
+    });
     editOverlay.addEventListener('click', function (ev) { if (ev.target === editOverlay) closeEdit(); });
 
     if (apiInput.value && tokenInput.value) load();
