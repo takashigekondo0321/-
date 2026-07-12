@@ -35,6 +35,15 @@
     tr.daystart td { border-top: 2px solid #94a3b8; }
     #editOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
     #editOverlay[hidden] { display: none; }
+    /* 順路図（訪問順の番号ピンつき地図） */
+    #mapOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 60; }
+    #mapOverlay[hidden] { display: none; }
+    #mapOverlay .mapbox { background: #fff; border-radius: 10px; padding: 12px; width: min(900px, 96vw); }
+    #routeMap { height: min(70vh, 560px); width: 100%; border-radius: 8px; background: #eef2f7; }
+    .maphead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+    .numpin { background: #1d4ed8; color: #fff; border-radius: 50%; width: 26px; height: 26px; line-height: 26px; text-align: center; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); font-size: 13px; }
+    .numpin.first { background: #dc2626; }
+    .numpin.origin { background: #0f766e; }
     #editCard { background: #fff; border-radius: 12px; padding: 18px; max-width: 560px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
     #editCard h3 { margin: 0 0 12px; font-size: 16px; }
     .egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -94,9 +103,9 @@
       <div class="card">
         <table>
           <thead>
-            <tr><th>校正日</th><th>曜</th><th>時間</th><th>管理番号</th><th>事業所名</th><th>地区</th><th>経路</th></tr>
+            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>地区</th><th>操作</th><th>経路</th></tr>
           </thead>
-          <tbody id="genRows"><tr><td colspan="7" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
+          <tbody id="genRows"><tr><td colspan="9" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -128,7 +137,7 @@
           <label class="ef">機器形態<input id="ef_equipment_type" placeholder="例: CS,BS" /></label>
           <label class="ef">始業<input id="ef_opening_time" placeholder="例: 09:00" /></label>
           <label class="ef">終業<input id="ef_closing_time" placeholder="例: 17:30" /></label>
-          <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" /></label>
+          <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" placeholder="空欄=機器形態から自動" title="空欄にすると機器形態から自動計算します（一般70/CS80/自動H80/BS100/CS+BS90/CS+BS+自動H110）" /></label>
           <label class="ef">班ID<input id="ef_default_team_id" /></label>
           <label class="ef">コース<input id="ef_course_group" /></label>
           <label class="ef" style="grid-column:1/-1">特記事項（例: 午前希望 / 午後希望 / 31日不可 / 月末不可 / 21日以降希望 / 週末希望 / 8月希望）<input id="ef_notes" placeholder="午前希望 31日不可 など（スペース区切り）" /></label>
@@ -137,12 +146,21 @@
             <span>✅ <b>入力確認済み</b>にする（チェックして保存すると確認日が記録され、一覧に✅が付きます）<span id="ef_checkedDate" style="color:#64748b;"></span></span>
           </label>
         </div>
+        <p class="muted" id="ef_coords" style="margin:6px 0 0"></p>
         <p class="muted" id="editMsg"></p>
         <div class="erow">
           <button type="button" id="editGeocode" class="tab" title="シートの住所から緯度経度を取得します（新しい工場を追加したとき用）">座標取得</button>
           <button type="button" id="editCancel" class="tab">キャンセル</button>
           <button type="button" id="editSave">保存</button>
         </div>
+      </div>
+    </div>
+
+    <div id="mapOverlay" hidden>
+      <div class="mapbox">
+        <div class="maphead"><b id="mapTitle"></b><button type="button" id="mapClose" class="tab">閉じる</button></div>
+        <div id="routeMap"></div>
+        <p class="muted" style="margin:6px 0 0">番号＝訪問順（<span style="color:#dc2626; font-weight:700">赤＝1件目</span>・「出」＝出発地点）。ピンを押すと時刻と工場名が出ます。ナビには「地図」リンク（Googleマップ）を使ってください。</p>
       </div>
     </div>
   </main>
@@ -326,7 +344,7 @@
         var md = d.date.slice(5).replace('-', '/');   // 07-08 → 07/08
         var mapCell = '';
         if (withMap) {
-          var mUrl = mapsRouteUrl(d.visits);
+          var mUrl = mapsRouteUrl(d.visits, dayOriginPoint(d));
           mapCell = '<td>' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') + '</td>';
         }
         var tr = document.createElement('tr');
@@ -339,13 +357,15 @@
     }
 
     // ---- 紙の日程表スタイル: 週 → 班 → 日（各訪問を1行ずつ、時間つき）----
+    // ↑↓で順番入替・✕で削除・＋で工場追加ができ、時刻はその場で再計算される。
     function renderMonthDetail(days, rowsTarget) {
       if (days.length === 0) {
-        rowsTarget.innerHTML = '<tr><td colspan="7" class="status">この期間に組める工場がありませんでした</td></tr>';
+        rowsTarget.innerHTML = '<tr><td colspan="9" class="status">この期間に組める工場がありませんでした</td></tr>';
         return;
       }
       rowsTarget.innerHTML = '';
       var TEAM_CHARS = 'ABCDE';
+      days.forEach(function (d, idx) { d._idx = idx; });   // 操作ボタン用の通し番号
       // 週ごとにまとめる（出現順を保持）
       var weeks = [], wkMap = {};
       days.forEach(function (d) {
@@ -356,7 +376,7 @@
       weeks.forEach(function (wk) {
         var gr = document.createElement('tr');
         gr.className = 'group';
-        gr.innerHTML = '<td colspan="7">📅 ' + esc(wk) + '</td>';
+        gr.innerHTML = '<td colspan="9">📅 ' + esc(wk) + '</td>';
         rowsTarget.appendChild(gr);
 
         // 週の中を班ごとにまとめる（A班→B班→…）
@@ -371,28 +391,53 @@
         teams.forEach(function (t) {
           var tr0 = document.createElement('tr');
           tr0.className = 'teamrow';
-          tr0.innerHTML = '<td colspan="7">' + esc((TEAM_CHARS.charAt(t - 1) || t) + '班') + '</td>';
+          tr0.innerHTML = '<td colspan="9">' + esc((TEAM_CHARS.charAt(t - 1) || t) + '班') + '</td>';
           rowsTarget.appendChild(tr0);
 
           tMap[t].sort(function (a, b) { return a.date < b.date ? -1 : 1; });
           tMap[t].forEach(function (d) {
             var md = d.date.slice(5).replace('-', '/');
-            var mUrl = mapsRouteUrl(d.visits);
+            var mUrl = mapsRouteUrl(d.visits, dayOriginPoint(d));
             var n = d.visits.length;
+            var v0 = d.visits[0] || {};
+            // 形態と出発の表示（日帰り=F1〜F3、直行=現地開始、宿泊2日目=9:00〜）
+            var flexNote = '';
+            if (v0.trip === '直行') flexNote = '直行 ' + esc(v0.depart_time || '') + '〜';
+            else if (v0.trip === '宿泊2日目') flexNote = '宿泊2日目 9:00〜' + (d.origin_name ? '（' + esc(d.origin_name) + '発）' : '');
+            else if (v0.trip === '宿泊初日') flexNote = '宿泊初日 ' + esc(v0.depart_time || '9:00') + '発';
+            else if (v0.flex) flexNote = esc(v0.flex) + ' ' + esc(v0.depart_time || '') + '発';
+            if (flexNote) flexNote = '<br><span style="font-size:11px; color:#1d4ed8; font-weight:700;">' + flexNote + '</span>';
             d.visits.forEach(function (v, i) {
               var tr = document.createElement('tr');
               if (i === 0) tr.className = 'daystart';
               var head = (i === 0)
-                ? '<td rowspan="' + n + '">' + esc(md) + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
+                ? '<td rowspan="' + n + '">' + esc(md) + flexNote + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
                 : '';
+              var ctl = '<td style="white-space:nowrap">' +
+                '<button type="button" class="editbtn mv" data-act="up" data-d="' + d._idx + '" data-v="' + i + '" title="上へ">↑</button> ' +
+                '<button type="button" class="editbtn mv" data-act="down" data-d="' + d._idx + '" data-v="' + i + '" title="下へ">↓</button> ' +
+                '<button type="button" class="editbtn mv" data-act="del" data-d="' + d._idx + '" data-v="' + i + '" title="この訪問を外す">✕</button> ' +
+                '<button type="button" class="editbtn mv" data-act="edit" data-d="' + d._idx + '" data-v="' + i + '" title="この工場を編集">✎</button></td>';
               var mapCell = (i === 0)
-                ? '<td rowspan="' + n + '">' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') + '</td>'
+                ? '<td rowspan="' + n + '">' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') +
+                  '<br><button type="button" class="editbtn mv" data-act="rmap" data-d="' + d._idx + '" title="訪問順の番号（1件目〜）つき経路図を開く">順路図</button>' +
+                  '<br><button type="button" class="editbtn mv" data-act="add" data-d="' + d._idx + '" title="この日に工場を追加">＋追加</button></td>'
+                : '';
+              var travNote = (i > 0 && Number(v.travel_minutes) >= 11)
+                ? '<span style="display:block; font-size:10px; color:#b45309; font-weight:700;" title="前の工場からの移動時間">↓移動' + esc(v.travel_minutes) + '分</span>'
                 : '';
               tr.innerHTML = head +
-                '<td>' + esc(v.planned_start) + '</td>' +
+                '<td' + (v.overrun ? ' class="warn" title="時間超過"' : '') + '>' + travNote + esc(v.planned_start) + '</td>' +
+                '<td>' + esc(fmtExpJs(v.expiry_date)) + '</td>' +
                 '<td>' + esc(v.management_no) + '</td>' +
-                '<td class="names">' + esc(v.office_name) + '</td>' +
-                '<td>' + esc(v.district) + '</td>' + mapCell;
+                '<td class="names">' + esc(v.office_name) +
+                (v.equipment_type ? ' <span style="color:#64748b; font-size:11px; font-weight:700;">［' + esc(v.equipment_type) + '］</span>' : '') +
+                (String(v.notes || '').indexOf('分離帯') >= 0 ? ' <span style="color:#dc2626; font-size:11px; font-weight:700;" title="' + esc(v.notes) + '">⚠分離帯</span>' : '') +
+                (v.detour_hint ? ' <span style="color:#d97706; font-size:11px; font-weight:700;" title="直線距離よりかなり遠回りの経路です（分離帯・一方通行などの可能性）。📍やこの日の地図リンクで迂回路を確認してください">🔁迂回</span>' : '') +
+                (mapsPointText(v)
+                  ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mapsPointText(v)) + '" target="_blank" rel="noopener" title="この工場をGoogleマップで開く（分離帯・入口の確認用）' + (v.lat != null && !isNaN(Number(v.lat)) ? '　座標: ' + v.lat + ', ' + v.lng : '') + '" style="text-decoration:none">📍</a>'
+                  : '') + '</td>' +
+                '<td>' + esc(v.district) + '</td>' + ctl + mapCell;
               rowsTarget.appendChild(tr);
             });
           });
@@ -402,8 +447,94 @@
 
     // ---- スケジュール作成（1か月分・週区切り・経路リンク付き）----
     function genStatus(msg, isErr) {
-      genRowsEl.innerHTML = '<tr><td colspan="7" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      genRowsEl.innerHTML = '<tr><td colspan="9" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
       genInfoEl.textContent = '';
+    }
+
+    // ---- 手直し用: 1日分の時刻をブラウザ側で再計算（サーバと同じルール） ----
+    var GENJS = {
+      branchLat: 35.140366, branchLng: 136.922104,
+      shortKm: 15, spNear: 20, spFar: 50,
+      lunchStart: 690, lunchMin: 60, maxAm: 2,
+      lastStart: 990, lastEnd: 1050, minInt: 30, hopMin: 10,
+      f1Min: 35, f2Min: 20, depF1: 510, depF2: 525, depF3: 540,
+      directMany: 570, directFew: 580, stayNext: 540, stayFirstDep: 540
+    };
+    function havJs(la1, lo1, la2, lo2) {
+      var R = 6371, toR = Math.PI / 180;
+      var p1 = la1 * toR, p2 = la2 * toR, dp = (la2 - la1) * toR, dl = (lo2 - lo1) * toR;
+      var a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+    function travJs(km) { return Math.ceil(km / (km <= GENJS.shortKm ? GENJS.spNear : GENJS.spFar) * 60); }
+    function hmJs(str) { var m = String(str || '').match(/^(\d{1,2}):?(\d{2})?/); return m ? Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0) : null; }
+    // 機器形態→標準滞在時間（Code.gsのSTAY_BY_EQUIPと同じ表）
+    var STAYJS = { '': 70, 'CS': 80, 'BS': 100, '自動H': 80, 'CS,BS': 90, 'CS,自動H': 90, 'BS,自動H': 110, 'CS,BS,自動H': 110 };
+    function stayFromEqJs(eq) {
+      if (!eq) return 70;
+      var toks = String(eq).split(/[,、]/).map(function (t) { return t.trim(); });
+      var known = ['CS', 'BS', '自動H'].filter(function (k) { return toks.indexOf(k) >= 0; });
+      var v = STAYJS[known.join(',')];
+      return v != null ? v : 70;
+    }
+    function fmtJs(mins) { var h = Math.floor(mins / 60), m2 = mins % 60; return (h < 10 ? '0' : '') + h + ':' + (m2 < 10 ? '0' : '') + m2; }
+    // 満了日を西暦入り「YYYY/M/D」で表示（例: 2026-08-09 → 2026/8/9）
+    function fmtExpJs(s) {
+      var m = String(s || '').match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+      return m ? (m[1] + '/' + Number(m[2]) + '/' + Number(m[3])) : String(s || '');
+    }
+    function retimeDay(d) {
+      var oLat = (d.origin_lat != null ? Number(d.origin_lat) : GENJS.branchLat);
+      var oLng = (d.origin_lng != null ? Number(d.origin_lng) : GENJS.branchLng);
+      var curLat = oLat, curLng = oLng, curEnd = null, prevStart = null, am = 0, lunch = false;
+      for (var i = 0; i < d.visits.length; i++) {
+        var v = d.visits[i];
+        var dist = havJs(curLat, curLng, Number(v.lat), Number(v.lng));
+        var trav = travJs(dist);
+        if (i > 0 && trav < GENJS.hopMin) trav = GENJS.hopMin;   // 工場間の移動は最低10分
+        var start;
+        if (i === 0) {
+          if (d.trip === '宿泊2日目') { start = GENJS.stayNext; v.flex = null; v.depart_time = null; }
+          else if (d.trip === '宿泊初日') { start = GENJS.stayFirstDep + trav; v.flex = null; v.depart_time = fmtJs(GENJS.stayFirstDep); }
+          else if (d.trip === '直行') { start = (d.visits.length >= 5 ? GENJS.directMany : GENJS.directFew); v.flex = null; v.depart_time = fmtJs(start); }
+          else {
+            // F判定シートで固定された判定があればそれを使う（無ければ距離から自動判定）
+            var dep;
+            if (d.flex_fixed === 'F1') dep = { m: GENJS.depF1, l: 'F1' };
+            else if (d.flex_fixed === 'F2') dep = { m: GENJS.depF2, l: 'F2' };
+            else if (d.flex_fixed === 'F3') dep = { m: GENJS.depF3, l: 'F3' };
+            else dep = trav >= GENJS.f1Min ? { m: GENJS.depF1, l: 'F1' } : trav >= GENJS.f2Min ? { m: GENJS.depF2, l: 'F2' } : { m: GENJS.depF3, l: 'F3' };
+            start = dep.m + trav; v.flex = dep.l; v.depart_time = fmtJs(dep.m);
+          }
+          v.trip = d.trip || '日帰り';
+        } else {
+          start = curEnd + trav;
+          if (prevStart !== null && start < prevStart + GENJS.minInt) start = prevStart + GENJS.minInt;
+          v.flex = null; v.depart_time = null; v.trip = null;
+        }
+        if (am >= GENJS.maxAm && start < 720) { start = 780; lunch = true; }
+        else if (!lunch && start >= GENJS.lunchStart) { start += GENJS.lunchMin; lunch = true; }
+        var open = v.opening_time ? hmJs(v.opening_time) : null;
+        var ns = String(v.notes || '');
+        if (open !== null) {
+          if (ns.indexOf('9:30可') >= 0) open = Math.min(open, 570);
+          if (ns.indexOf('9:40可') >= 0) open = Math.min(open, 580);
+          if (start < open) start = open;
+        }
+        if (start >= 720 && start < 780) { start = 780; lunch = true; }   // 12時台は開始しない（13:00ちょうどはOK）
+        var stay = Number(v.stay_min) || 70;
+        var end = start + stay;
+        v.sequence_no = i + 1;
+        v.travel_minutes = (i === 0 ? trav : trav);
+        v.distance_km = Math.round(dist * 10) / 10;
+        v.detour_hint = null;   // 手直し後は直線計算になるため迂回ヒントはいったん消す（作り直すと再判定）
+        v.planned_start = fmtJs(start);
+        v.planned_end = fmtJs(end);
+        v.overrun = (start > GENJS.lastStart || end > GENJS.lastEnd);   // 収まらない場合は赤表示
+        if (start < 720) am++;
+        prevStart = start; curEnd = end; curLat = Number(v.lat); curLng = Number(v.lng);
+      }
+      d.count = d.visits.length;
     }
     async function generate() {
       var base = apiUrl();
@@ -428,12 +559,65 @@
         if (data.error) { genStatus('エラー: ' + data.error, true); return; }
         genInfoEl.textContent = s + ' 〜 ' + e + '：のべ出動 ' + data.scheduled_days + '班・日 ／ 総訪問 ' + data.total_visits + '件' +
           (data.unscheduled_count > 0 ? ' ／ ⚠ この期間に満了なのに未割当 ' + data.unscheduled_count + '件（年間計画タブで確認）' : '');
-        renderMonthDetail(data.days || [], genRowsEl);
+        curMonthDays = data.days || [];
+        renderMonthDetail(curMonthDays, genRowsEl);
       } catch (err) {
         genStatus('通信に失敗しました: ' + err, true);
       }
     }
     genBtn.addEventListener('click', generate);
+
+    // ---- 月間日程の手直し（↑↓入替・✕削除・＋追加）----
+    var curMonthDays = null;
+    genRowsEl.addEventListener('click', function (ev) {
+      var el = ev.target;
+      while (el && el !== genRowsEl && !(el.tagName === 'BUTTON' && el.className.indexOf('mv') >= 0)) el = el.parentElement;
+      if (!el || el === genRowsEl || !curMonthDays) return;
+      var d = curMonthDays[Number(el.getAttribute('data-d'))];
+      if (!d) return;
+      var act = el.getAttribute('data-act');
+      var vi = Number(el.getAttribute('data-v') || -1);
+      if (act === 'rmap') { openRouteMap(d); return; }
+      if (act === 'edit') {
+        var ev2 = d.visits[vi];
+        if (!ev2) return;
+        var inList = allFactories.some(function (f2) { return String(f2.management_no) === String(ev2.management_no); });
+        if (!inList) { alert('先に「工場一覧」タブで工場を読み込んでください'); return; }
+        openEdit(ev2.management_no);
+        return;
+      }
+      if (act === 'up' && vi > 0) {
+        var a = d.visits[vi - 1]; d.visits[vi - 1] = d.visits[vi]; d.visits[vi] = a;
+      } else if (act === 'down' && vi >= 0 && vi < d.visits.length - 1) {
+        var b2 = d.visits[vi + 1]; d.visits[vi + 1] = d.visits[vi]; d.visits[vi] = b2;
+      } else if (act === 'del') {
+        var name = d.visits[vi] ? d.visits[vi].office_name : '';
+        if (!confirm(d.date + ' から「' + name + '」を外しますか？\n（この画面上だけの変更です。作り直すと元に戻ります）')) return;
+        d.visits.splice(vi, 1);
+      } else if (act === 'add') {
+        var m = prompt('この日（' + d.date + '）に追加する工場の管理番号を入力してください');
+        if (!m) return;
+        m = m.trim();
+        var f = null;
+        for (var i = 0; i < allFactories.length; i++) {
+          if (String(allFactories[i].management_no) === m) { f = allFactories[i]; break; }
+        }
+        if (!f) { alert('管理番号 ' + m + ' が見つかりません（工場一覧を先に読み込んでください）'); return; }
+        if (!f.lat || !f.lng) { alert('この工場は緯度経度が未設定のため追加できません（編集画面の「座標取得」で取得してください）'); return; }
+        d.visits.push({
+          management_no: f.management_no, office_name: f.office_name, district: f.district,
+          address: f.address, lat: Number(f.lat), lng: Number(f.lng),
+          stay_min: Number(f.stay_duration_min) || stayFromEqJs(f.equipment_type),
+          equipment_type: f.equipment_type || '',
+          opening_time: f.opening_time || '', closing_time: f.closing_time || '', notes: f.notes || '',
+          expiry_date: f.expiry_date || '', closed_days: f.closed_days || '', warnings: []
+        });
+      } else {
+        return;
+      }
+      retimeDay(d);
+      renderMonthDetail(curMonthDays, genRowsEl);
+    });
     // 対象月プルダウン: 今月から12か月分（初期値=今月）
     (function () {
       var t = new Date();
@@ -450,17 +634,30 @@
     // ---- 年間計画 ----
     // 1日のルートをGoogleマップの経路URLにする（出発: 名古屋支所）。
     // 緯度経度があればそれを、無ければ住所を使う。
-    var BRANCH_POINT = '35.1815,136.9066'; // 名古屋支所（Code.gsのGENと同じ値）
-    function mapsRouteUrl(visits) {
-      var pts = (visits || []).map(function (v) {
-        if (v.lat != null && v.lng != null && String(v.lat) !== '' && !isNaN(Number(v.lat))) return v.lat + ',' + v.lng;
-        return v.address || v.office_name || '';
-      }).filter(function (p) { return p; });
+    var BRANCH_POINT = '35.140366,136.922104'; // 名古屋支所＝昭和区滝子町30-16（Code.gsのGENと同じ値）
+    // その日の出発地点（宿泊2日目=駅/前日最終地点、その他=支所）を'lat,lng'で返す
+    function dayOriginPoint(d) {
+      if (d && d.origin_lat != null && d.origin_lng != null && !isNaN(Number(d.origin_lat))) {
+        return d.origin_lat + ',' + d.origin_lng;
+      }
+      return BRANCH_POINT;
+    }
+    // 地図に渡す1地点ぶんの文字列。「工場名 住所」で渡すとGoogleマップ上に工場名が表示される
+    // （座標で渡すと住所しか出ず、どの工場か分かりにくいため）。住所が無い工場だけ座標で渡す。
+    function mapsPointText(v) {
+      var name = String(v.office_name || '').trim();
+      var addr = String(v.address || '').trim();
+      if (name && addr) return name + ' ' + addr;
+      if (v.lat != null && v.lng != null && String(v.lat) !== '' && !isNaN(Number(v.lat))) return v.lat + ',' + v.lng;
+      return addr || name || '';
+    }
+    function mapsRouteUrl(visits, originPt) {
+      var pts = (visits || []).map(mapsPointText).filter(function (p) { return p; });
       if (pts.length === 0) return '';
       var dest = pts[pts.length - 1];
       var way = pts.slice(0, -1);
       var url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving' +
-        '&origin=' + encodeURIComponent(BRANCH_POINT) +
+        '&origin=' + encodeURIComponent(originPt || BRANCH_POINT) +
         '&destination=' + encodeURIComponent(dest);
       if (way.length > 0) url += '&waypoints=' + encodeURIComponent(way.join('|'));
       return url;
@@ -517,6 +714,60 @@
     }
     annBtn.addEventListener('click', runAnnual);
 
+    // ---- 順路図（無料の地図に訪問順の番号ピンを表示。Leaflet + OpenStreetMap） ----
+    var mapOverlay = document.getElementById('mapOverlay');
+    var routeMapObj = null;
+    function ensureLeaflet(cb) {
+      if (window.L) { cb(); return; }
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+      var js = document.createElement('script');
+      js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      js.onload = cb;
+      js.onerror = function () { alert('地図ライブラリの読み込みに失敗しました（通信環境を確認してください）'); mapOverlay.hidden = true; };
+      document.head.appendChild(js);
+    }
+    function numIcon(html, cls) {
+      return L.divIcon({ className: '', html: '<div class="numpin ' + (cls || '') + '">' + html + '</div>', iconSize: [26, 26], iconAnchor: [13, 13] });
+    }
+    function openRouteMap(d) {
+      var pts = (d.visits || []).filter(function (v) { return v.lat != null && v.lng != null && !isNaN(Number(v.lat)); });
+      if (pts.length === 0) { alert('座標のある訪問がありません'); return; }
+      var TEAM_CHARS = 'ABCDE';
+      document.getElementById('mapTitle').textContent =
+        d.date + '（' + d.weekday + '）' + (TEAM_CHARS.charAt((d.team || 1) - 1) || d.team) + '班 ' + d.district + ' の訪問順';
+      mapOverlay.hidden = false;
+      ensureLeaflet(function () {
+        if (routeMapObj) { routeMapObj.remove(); routeMapObj = null; }
+        var map = L.map('routeMap');
+        routeMapObj = map;
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxZoom: 19
+        }).addTo(map);
+        var latlngs = [];
+        var op = dayOriginPoint(d).split(',');
+        var oll = [Number(op[0]), Number(op[1])];
+        var oname = d.origin_name || '名古屋支所';
+        latlngs.push(oll);
+        L.marker(oll, { icon: numIcon('出', 'origin') }).addTo(map).bindPopup('出発地点：' + esc(oname));
+        pts.forEach(function (v, i) {
+          var ll = [Number(v.lat), Number(v.lng)];
+          latlngs.push(ll);
+          L.marker(ll, { icon: numIcon(String(i + 1), i === 0 ? 'first' : '') }).addTo(map)
+            .bindPopup((i + 1) + '件目 ' + esc(v.planned_start || '') + '〜<br><b>' + esc(v.office_name) + '</b>' +
+              (v.equipment_type ? '［' + esc(v.equipment_type) + '］' : '') +
+              '<br><span style="color:#64748b; font-size:11px;">座標: ' + ll[0] + ', ' + ll[1] + '</span>');
+        });
+        L.polyline(latlngs, { color: '#1d4ed8', weight: 3, opacity: 0.7, dashArray: '6 6' }).addTo(map);
+        map.fitBounds(latlngs, { padding: [30, 30] });
+        setTimeout(function () { map.invalidateSize(); map.fitBounds(latlngs, { padding: [30, 30] }); }, 60);
+      });
+    }
+    document.getElementById('mapClose').addEventListener('click', function () { mapOverlay.hidden = true; });
+    mapOverlay.addEventListener('click', function (ev) { if (ev.target === mapOverlay) mapOverlay.hidden = true; });
+
     // ---- 工場の編集 ----
     var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'nth_closed', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes'];
     var editOverlay = document.getElementById('editOverlay');
@@ -535,6 +786,10 @@
         var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
         if (el) el.value = (f[EDIT_FIELDS[k]] == null ? '' : String(f[EDIT_FIELDS[k]]));
       }
+      var hasLl = f.lat != null && String(f.lat) !== '' && !isNaN(Number(f.lat));
+      document.getElementById('ef_coords').textContent = hasLl
+        ? '座標: ' + f.lat + ', ' + f.lng + '（コピーしてカーナビ等に使えます。更新は「座標取得」）'
+        : '座標: 未取得（「座標取得」ボタンで住所から取得できます）';
       var hasCheck = !!String(f.checked_date == null ? '' : f.checked_date).trim();
       document.getElementById('ef_checked').checked = hasCheck;
       document.getElementById('ef_checkedDate').textContent = hasCheck ? '（確認日: ' + String(f.checked_date).trim() + '）' : '';
@@ -579,6 +834,33 @@
             for (var kk = 0; kk < EDIT_FIELDS.length; kk++) allFactories[i][EDIT_FIELDS[kk]] = changes[EDIT_FIELDS[kk]];
             allFactories[i].checked_date = changes['checked_date'];
             break;
+          }
+        }
+        // スケジュール作成の表にも反映（同じ工場の行を書き換えて時刻を再計算）
+        if (curMonthDays) {
+          var touched = [];
+          curMonthDays.forEach(function (dd) {
+            var hit = false;
+            dd.visits.forEach(function (vv) {
+              if (String(vv.management_no) !== editingMgmt) return;
+              vv.office_name = changes['office_name'] || vv.office_name;
+              vv.equipment_type = changes['equipment_type'] || '';
+              vv.notes = changes['notes'] || '';
+              vv.opening_time = changes['opening_time'] || '';
+              vv.closing_time = changes['closing_time'] || '';
+              vv.expiry_date = changes['expiry_date'] || vv.expiry_date;
+              if (changes['stay_duration_min'] && !isNaN(Number(changes['stay_duration_min']))) {
+                vv.stay_min = Number(changes['stay_duration_min']);
+              } else {
+                vv.stay_min = stayFromEqJs(changes['equipment_type']);   // 空欄=機器形態から自動
+              }
+              hit = true;
+            });
+            if (hit) touched.push(dd);
+          });
+          if (touched.length) {
+            touched.forEach(retimeDay);
+            renderMonthDetail(curMonthDays, genRowsEl);
           }
         }
         render();
