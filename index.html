@@ -44,6 +44,25 @@
     .numpin { background: #1d4ed8; color: #fff; border-radius: 50%; width: 26px; height: 26px; line-height: 26px; text-align: center; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); font-size: 13px; }
     .numpin.first { background: #dc2626; }
     .numpin.origin { background: #0f766e; }
+    /* PDF出力（印刷）: 日程表だけをA4横できれいに出す */
+    @media print {
+      @page { size: A4 landscape; margin: 10mm; }
+      header p, #config, #configToggle, .tabs, .toolbar, #mapOverlay, #editOverlay { display: none !important; }
+      .col-ctl, .col-map { display: none !important; }      /* 操作・経路の列は紙に不要 */
+      .editbtn, .mv { display: none !important; }
+      td a[title*="Googleマップ"] { display: none !important; } /* 📍リンク */
+      header h1 { font-size: 16px; margin: 0 0 4px; }
+      #genInfo { font-size: 11px; }
+      table { font-size: 10px; width: 100%; }
+      th, td { padding: 3px 6px; }
+      .card { box-shadow: none; border: none; padding: 0; }
+      /* 週見出し・班見出しの色を印刷でも残す */
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      tr.group td { background: #e2e8f0 !important; }
+      tr.teamrow td { background: #dbeafe !important; }
+      tr.group { break-after: avoid; }
+      tr { break-inside: avoid; }
+    }
     #editCard { background: #fff; border-radius: 12px; padding: 18px; max-width: 560px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
     #editCard h3 { margin: 0 0 12px; font-size: 16px; }
     .egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -98,12 +117,14 @@
       <div class="toolbar">
         <label class="fld">対象月<select id="genMonth"></select></label>
         <button id="genBtn" type="button">1か月分の日程を作成</button>
+        <button id="pdfBtn" type="button" class="tab" title="印刷画面が開きます。送信先を「PDFに保存」にするとPDFファイルとして保存できます">PDF出力</button>
+        <button id="monthMapBtn" type="button" class="tab" title="1か月の全訪問を週ごとの色分けで地図に表示します">月間マップ</button>
       </div>
       <p class="muted" id="genInfo" style="margin-top:0"></p>
       <div class="card">
         <table>
           <thead>
-            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>地区</th><th>操作</th><th>経路</th></tr>
+            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>地区</th><th class="col-ctl">操作</th><th class="col-map">経路</th></tr>
           </thead>
           <tbody id="genRows"><tr><td colspan="9" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
         </table>
@@ -159,8 +180,9 @@
     <div id="mapOverlay" hidden>
       <div class="mapbox">
         <div class="maphead"><b id="mapTitle"></b><button type="button" id="mapClose" class="tab">閉じる</button></div>
+        <div id="mapLegend" style="margin:0 0 6px; font-size:12px; color:#334155;"></div>
         <div id="routeMap"></div>
-        <p class="muted" style="margin:6px 0 0">番号＝訪問順（<span style="color:#dc2626; font-weight:700">赤＝1件目</span>・「出」＝出発地点）。ピンを押すと時刻と工場名が出ます。ナビには「地図」リンク（Googleマップ）を使ってください。</p>
+        <p class="muted" id="mapNote" style="margin:6px 0 0"></p>
       </div>
     </div>
   </main>
@@ -413,13 +435,13 @@
               var head = (i === 0)
                 ? '<td rowspan="' + n + '">' + esc(md) + flexNote + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
                 : '';
-              var ctl = '<td style="white-space:nowrap">' +
+              var ctl = '<td class="col-ctl" style="white-space:nowrap">' +
                 '<button type="button" class="editbtn mv" data-act="up" data-d="' + d._idx + '" data-v="' + i + '" title="上へ">↑</button> ' +
                 '<button type="button" class="editbtn mv" data-act="down" data-d="' + d._idx + '" data-v="' + i + '" title="下へ">↓</button> ' +
                 '<button type="button" class="editbtn mv" data-act="del" data-d="' + d._idx + '" data-v="' + i + '" title="この訪問を外す">✕</button> ' +
                 '<button type="button" class="editbtn mv" data-act="edit" data-d="' + d._idx + '" data-v="' + i + '" title="この工場を編集">✎</button></td>';
               var mapCell = (i === 0)
-                ? '<td rowspan="' + n + '">' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') +
+                ? '<td class="col-map" rowspan="' + n + '">' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') +
                   '<br><button type="button" class="editbtn mv" data-act="rmap" data-d="' + d._idx + '" title="訪問順の番号（1件目〜）つき経路図を開く">順路図</button>' +
                   '<br><button type="button" class="editbtn mv" data-act="add" data-d="' + d._idx + '" title="この日に工場を追加">＋追加</button></td>'
                 : '';
@@ -543,29 +565,48 @@
       var ym = genMonthSelect.value;               // "YYYY-MM"
       if (!ym) { genStatus('対象月を選んでください', true); return; }
       var y0 = Number(ym.split('-')[0]), m0 = Number(ym.split('-')[1]) - 1;
-      var s = ym + '-01';                          // 月の1日から
+      function isoD(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+      var first = new Date(y0, m0, 1);
+      // 表示開始 = 月初を含む週の月曜（月初が火〜金なら前月末の月曜から。紙の日程表と同じ週区切り）
+      var dow1 = first.getDay();                   // 0=日 1=月 .. 6=土
+      var viewStart = (dow1 >= 2 && dow1 <= 5) ? new Date(first.getTime() - (dow1 - 1) * 86400000) : first;
+      // 生成はさらに30日前から助走させる（前月に回るはずの工場＝窓16日+前倒し14日ぶんを
+      //  正しく消化してから当月に入る＝未割当の数が正確になる。助走分は表示しない）
+      var genStart = new Date(viewStart.getTime() - 30 * 86400000);
       var last = new Date(y0, m0 + 1, 0);          // 月末日
       // 月末の週が翌月にまたがる場合は、その週の金曜まで延長して翌月分も表示する
       var dow = last.getDay();                     // 0=日 .. 5=金 6=土
       if (dow >= 1 && dow <= 4) {                  // 月〜木で終わる月 → 同じ週の金曜まで
         last = new Date(last.getTime() + (5 - dow) * 86400000);
       }
-      var e = last.getFullYear() + '-' + ('0' + (last.getMonth() + 1)).slice(-2) + '-' + ('0' + last.getDate()).slice(-2);
+      var e = isoD(last);
+      var viewIso = isoD(viewStart);
       genStatus('作成中...（数秒かかります）');
       try {
-        var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
+        var url = base + '?action=annual&start=' + encodeURIComponent(isoD(genStart)) + '&end=' + encodeURIComponent(e) +
+          '&unscheduled_from=' + encodeURIComponent(viewIso) + '&token=' + encodeURIComponent(apiToken());
         var res = await fetch(url);
         var data = await res.json();
         if (data.error) { genStatus('エラー: ' + data.error, true); return; }
-        genInfoEl.textContent = s + ' 〜 ' + e + '：のべ出動 ' + data.scheduled_days + '班・日 ／ 総訪問 ' + data.total_visits + '件' +
+        curMonthDays = (data.days || []).filter(function (d) { return d.date >= viewIso; });   // 助走分は表示しない
+        var shownVisits = 0;
+        curMonthDays.forEach(function (d) { shownVisits += d.count; });
+        genInfoEl.textContent = viewIso + ' 〜 ' + e + '：のべ出動 ' + curMonthDays.length + '班・日 ／ 総訪問 ' + shownVisits + '件' +
           (data.unscheduled_count > 0 ? ' ／ ⚠ この期間に満了なのに未割当 ' + data.unscheduled_count + '件（年間計画タブで確認）' : '');
-        curMonthDays = data.days || [];
         renderMonthDetail(curMonthDays, genRowsEl);
       } catch (err) {
         genStatus('通信に失敗しました: ' + err, true);
       }
     }
     genBtn.addEventListener('click', generate);
+    // PDF出力: ブラウザの印刷画面を開く（送信先を「PDFに保存」にするとPDFになる）
+    document.getElementById('pdfBtn').addEventListener('click', function () {
+      if (!curMonthDays || curMonthDays.length === 0) {
+        alert('先に「1か月分の日程を作成」を押してから、PDF出力してください');
+        return;
+      }
+      window.print();
+    });
 
     // ---- 月間日程の手直し（↑↓入替・✕削除・＋追加）----
     var curMonthDays = null;
@@ -738,6 +779,8 @@
       var TEAM_CHARS = 'ABCDE';
       document.getElementById('mapTitle').textContent =
         d.date + '（' + d.weekday + '）' + (TEAM_CHARS.charAt((d.team || 1) - 1) || d.team) + '班 ' + d.district + ' の訪問順';
+      document.getElementById('mapLegend').innerHTML = '';
+      document.getElementById('mapNote').textContent = '番号＝訪問順（赤＝1件目・「出」＝出発地点）。ピンを押すと時刻と工場名が出ます。ナビには「地図」リンク（Googleマップ）を使ってください。';
       mapOverlay.hidden = false;
       ensureLeaflet(function () {
         if (routeMapObj) { routeMapObj.remove(); routeMapObj = null; }
@@ -765,6 +808,60 @@
         setTimeout(function () { map.invalidateSize(); map.fitBounds(latlngs, { padding: [30, 30] }); }, 60);
       });
     }
+    // ---- 月間マップ: 1か月の全訪問を週ごとの色分けで一括表示 ----
+    var WEEK_COLORS = ['#1d4ed8', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2'];
+    function openMonthMap() {
+      if (!curMonthDays || curMonthDays.length === 0) {
+        alert('先に「1か月分の日程を作成」を押してから、月間マップを開いてください');
+        return;
+      }
+      document.getElementById('mapTitle').textContent = '月間マップ（週ごとに色分け）';
+      document.getElementById('mapNote').textContent = '点の色＝週。点を押すと日付・班・時刻・工場名が出ます。緑の「支」＝名古屋支所。';
+      mapOverlay.hidden = false;
+      ensureLeaflet(function () {
+        if (routeMapObj) { routeMapObj.remove(); routeMapObj = null; }
+        var map = L.map('routeMap');
+        routeMapObj = map;
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxZoom: 19
+        }).addTo(map);
+        // 週→色 の割当（表と同じ週区切りを使う）
+        var weekColor = {}, weekOrder = [];
+        curMonthDays.forEach(function (d) {
+          var wk = weekRangeLabel(d.date);
+          if (!(wk in weekColor)) { weekColor[wk] = WEEK_COLORS[weekOrder.length % WEEK_COLORS.length]; weekOrder.push(wk); }
+        });
+        var TEAM_CHARS = 'ABCDE';
+        var pts = [];
+        curMonthDays.forEach(function (d) {
+          var col = weekColor[weekRangeLabel(d.date)];
+          d.visits.forEach(function (v, i) {
+            if (v.lat == null || v.lng == null || isNaN(Number(v.lat))) return;
+            var ll = [Number(v.lat), Number(v.lng)];
+            pts.push(ll);
+            L.circleMarker(ll, { radius: 6, color: '#fff', weight: 1.5, fillColor: col, fillOpacity: 0.9 })
+              .addTo(map)
+              .bindPopup(d.date.slice(5).replace('-', '/') + '（' + d.weekday + '）' +
+                (TEAM_CHARS.charAt((d.team || 1) - 1) || d.team) + '班 ' + (i + 1) + '件目 ' + esc(v.planned_start || '') +
+                '<br><b>' + esc(v.office_name) + '</b>（' + esc(v.district) + '）' +
+                (v.equipment_type ? '［' + esc(v.equipment_type) + '］' : ''));
+          });
+        });
+        // 名古屋支所
+        L.marker([GENJS.branchLat, GENJS.branchLng], { icon: numIcon('支', 'origin') }).addTo(map).bindPopup('名古屋支所');
+        pts.push([GENJS.branchLat, GENJS.branchLng]);
+        // 凡例（週→色）
+        document.getElementById('mapLegend').innerHTML = weekOrder.map(function (wk) {
+          return '<span style="display:inline-flex; align-items:center; gap:4px; margin-right:12px; white-space:nowrap;">' +
+            '<span style="width:12px; height:12px; border-radius:50%; background:' + weekColor[wk] + '; display:inline-block;"></span>' +
+            esc(wk) + '</span>';
+        }).join('');
+        map.fitBounds(pts, { padding: [30, 30] });
+        setTimeout(function () { map.invalidateSize(); map.fitBounds(pts, { padding: [30, 30] }); }, 60);
+      });
+    }
+    document.getElementById('monthMapBtn').addEventListener('click', openMonthMap);
+
     document.getElementById('mapClose').addEventListener('click', function () { mapOverlay.hidden = true; });
     mapOverlay.addEventListener('click', function (ev) { if (ev.target === mapOverlay) mapOverlay.hidden = true; });
 
