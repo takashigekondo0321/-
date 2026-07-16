@@ -5,45 +5,78 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>訪問スケジュール作成システム（三重県専用）</title>
   <style>
-    :root { color-scheme: light; }
-    body { margin: 0; font-family: system-ui, "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; background: #f1f5f9; color: #1e293b; }
-    header { background: linear-gradient(90deg, #0f172a, #1e3a5f, #1e40af); color: #fff; padding: 12px 16px; }
-    header h1 { margin: 0; font-size: 16px; }
-    header p { margin: 2px 0 0; font-size: 11px; color: #94a3b8; }
-    main { max-width: 1100px; margin: 0 auto; padding: 16px; }
-    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-    input, select, button { font-size: 14px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
-    button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
-    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow-x: auto; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+    :root {
+      color-scheme: light;
+      --ink: #1e293b;
+      --sub: #64748b;
+      --line: #e3e8f2;
+      --accent: #2563eb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+      background: linear-gradient(180deg, #f7f9fd 0%, #eef1f7 260px); color: var(--ink); }
+    header { position: relative; color: #fff; padding: 18px 22px 16px; overflow: hidden;
+      background: linear-gradient(115deg, #0b1220 0%, #16294f 45%, #1d4ed8 100%); }
+    header::before { content: ""; position: absolute; top: -70px; right: -40px; width: 280px; height: 280px; border-radius: 50%;
+      background: radial-gradient(closest-side, rgba(96,165,250,.35), transparent 70%); }
+    header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+      background: linear-gradient(90deg, #22d3ee, #3b82f6, #8b5cf6); }
+    header h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .04em; position: relative; }
+    header h1::before { content: "🗓 "; }
+    header p { margin: 4px 0 0; font-size: 11px; color: #9db9e8; letter-spacing: .18em; position: relative; }
+    main { max-width: 1200px; margin: 0 auto; padding: 18px 16px 40px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+    input, select, button { font-size: 14px; padding: 7px 12px; border: 1px solid #cdd6e6; border-radius: 9px; background: #fff; color: var(--ink);
+      transition: border-color .15s, box-shadow .15s, transform .05s, background .15s, color .15s; }
+    input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+    button { background: linear-gradient(180deg, #3b82f6, #2563eb); color: #fff; border: none; cursor: pointer; font-weight: 600;
+      box-shadow: 0 1px 2px rgba(30,58,138,.35); }
+    button:hover { filter: brightness(1.08); box-shadow: 0 3px 10px -2px rgba(30,58,138,.4); }
+    button:active { transform: translateY(1px); box-shadow: none; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow-x: auto;
+      box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 10px 28px -14px rgba(15,23,42,.14); }
+    .card::-webkit-scrollbar { height: 10px; }
+    .card::-webkit-scrollbar-thumb { background: #c3cede; border-radius: 6px; }
+    .card::-webkit-scrollbar-track { background: #f1f4fa; }
     table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
-    th { background: #f8fafc; color: #64748b; position: sticky; top: 0; }
-    tr.group td { background: #f1f5f9; font-weight: 600; color: #334155; }
+    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #f0f3f9; white-space: nowrap; }
+    th { background: #f7f9fd; color: #5b6b84; position: sticky; top: 0; z-index: 1; font-size: 11px; letter-spacing: .08em; border-bottom: 1px solid var(--line); }
+    tbody tr:not(.group):not(.teamrow):hover td { background: #f4f8ff; }
+    tr.group td { background: linear-gradient(90deg, #eef2f8, #f7f9fc); font-weight: 700; color: #334155; border-top: 1px solid var(--line); }
     .muted { color: #94a3b8; }
-    .status { padding: 20px; text-align: center; color: #64748b; }
+    .status { padding: 26px; text-align: center; color: #64748b; }
     .err { color: #dc2626; }
-    #config { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 13px; }
-    #config input { width: 100%; box-sizing: border-box; margin-top: 6px; }
-    .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-    .tab { background: #fff; color: #334155; border: 1px solid #cbd5e1; font-weight: 600; }
-    .tab.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+    #config { background: linear-gradient(180deg, #fffdf3, #fff7dc); border: 1px solid #f2dd8f; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font-size: 13px; }
+    #config input { width: 100%; margin-top: 6px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .tab { background: #fff; color: #40506a; border: 1px solid #cdd6e6; font-weight: 600; border-radius: 999px; padding: 7px 16px; box-shadow: none; }
+    .tab:hover { border-color: var(--accent); color: var(--accent); background: #f5f9ff; filter: none; box-shadow: none; }
+    .tab.on { background: linear-gradient(115deg, #2563eb, #4f46e5); color: #fff; border-color: transparent;
+      box-shadow: 0 3px 10px -2px rgba(67,76,222,.5); }
+    .tab.on:hover { color: #fff; filter: brightness(1.05); }
     .warn { color: #b45309; font-weight: 600; }
-    label.fld { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; }
-    .editbtn { background: #fff; color: #2563eb; border: 1px solid #93c5fd; padding: 3px 10px; font-size: 12px; }
+    label.fld { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    .editbtn { background: #fff; color: var(--accent); border: 1px solid #bfd7fd; padding: 3px 10px; font-size: 12px; border-radius: 7px; box-shadow: none; font-weight: 600; }
+    .editbtn:hover { background: #eaf2ff; filter: none; box-shadow: none; }
     td.names { white-space: normal; min-width: 320px; line-height: 1.7; }
-    tr.teamrow td { background: #dbeafe; font-weight: 700; color: #1e40af; }
-    tr.daystart td { border-top: 2px solid #94a3b8; }
-    #editOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
+    tr.teamrow td { background: linear-gradient(90deg, #e3edff, #eef4ff); font-weight: 700; color: #1e40af; border-left: 4px solid #2563eb; }
+    tr.daystart td { border-top: 2px solid #b6c4da; }
+    #editOverlay { position: fixed; inset: 0; background: rgba(8,14,30,.5); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
     #editOverlay[hidden] { display: none; }
-    /* 順路図（訪問順の番号ピンつき地図） */
-    #mapOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 60; }
+    /* 順路図・月間マップ（地図モーダル） */
+    #mapOverlay { position: fixed; inset: 0; background: rgba(8,14,30,.5); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 60; }
     #mapOverlay[hidden] { display: none; }
-    #mapOverlay .mapbox { background: #fff; border-radius: 10px; padding: 12px; width: min(900px, 96vw); }
-    #routeMap { height: min(70vh, 560px); width: 100%; border-radius: 8px; background: #eef2f7; }
+    #mapOverlay .mapbox { background: #fff; border-radius: 16px; padding: 14px; width: min(920px, 96vw); box-shadow: 0 24px 60px -12px rgba(2,6,23,.5); }
+    #routeMap { height: min(70vh, 560px); width: 100%; border-radius: 10px; background: #eef2f7; }
     .maphead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
-    .numpin { background: #1d4ed8; color: #fff; border-radius: 50%; width: 26px; height: 26px; line-height: 26px; text-align: center; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); font-size: 13px; }
+    .numpin { box-sizing: content-box; background: #1d4ed8; color: #fff; border-radius: 50%; width: 26px; height: 26px; line-height: 26px; text-align: center; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); font-size: 13px; }
     .numpin.first { background: #dc2626; }
     .numpin.origin { background: #0f766e; }
+    @media (max-width: 600px) {
+      header { padding: 14px 14px 12px; }
+      header h1 { font-size: 15px; }
+      main { padding: 12px 10px 30px; }
+    }
     /* PDF出力（印刷）: 日程表だけをA4横できれいに出す */
     @media print {
       @page { size: A4 landscape; margin: 10mm; }
@@ -63,8 +96,8 @@
       tr.group { break-after: avoid; }
       tr { break-inside: avoid; }
     }
-    #editCard { background: #fff; border-radius: 12px; padding: 18px; max-width: 560px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
-    #editCard h3 { margin: 0 0 12px; font-size: 16px; }
+    #editCard { background: #fff; border-radius: 16px; padding: 20px; max-width: 560px; width: 100%; box-shadow: 0 24px 60px -12px rgba(2,6,23,.5); }
+    #editCard h3 { margin: 0 0 12px; font-size: 16px; padding-bottom: 10px; border-bottom: 2px solid #eef2f8; }
     .egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .ef { display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 3px; }
     .ef input { font-size: 14px; }
@@ -153,8 +186,7 @@
           <label class="ef">管理番号<input id="ef_mgmt" disabled /></label>
           <label class="ef">事業所名<input id="ef_office_name" /></label>
           <label class="ef">満了日<input id="ef_expiry_date" type="date" /></label>
-          <label class="ef">定休日<input id="ef_closed_days" placeholder="例: 火,水" /></label>
-          <label class="ef">第N曜休<input id="ef_nth_closed" placeholder="例: 2火 / 1火;3火" /></label>
+          <label class="ef">定休日<input id="ef_closed_days" placeholder="例: 火,水,第2月" title="毎週の定休は曜日1文字（火,水）、第N曜の休みは「第2火」のように書きます。カンマ区切りで混在OK（例: 水,第2火,第4火）" /></label>
           <label class="ef">機器形態<input id="ef_equipment_type" placeholder="例: CS,BS" /></label>
           <label class="ef">始業<input id="ef_opening_time" placeholder="例: 09:00" /></label>
           <label class="ef">終業<input id="ef_closing_time" placeholder="例: 17:30" /></label>
@@ -307,7 +339,7 @@
           '<td>' + esc(f.office_name) + '</td>' +
           '<td>' + esc(f.district) + '</td>' +
           '<td>' + esc(f.expiry_date) + '</td>' +
-          '<td>' + esc(f.closed_days) + '</td>' +
+          '<td>' + esc(mergedClosedDays(f)) + '</td>' +
           '<td>' + esc(f.equipment_type) + '</td>' +
           '<td><button type="button" class="editbtn" data-mgmt="' + esc(f.management_no) + '">編集</button></td>';
         rowsEl.appendChild(tr);
@@ -866,7 +898,18 @@
     mapOverlay.addEventListener('click', function (ev) { if (ev.target === mapOverlay) mapOverlay.hidden = true; });
 
     // ---- 工場の編集 ----
-    var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'nth_closed', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes'];
+    // 旧「第N曜休」欄は「定休日」欄に統合（定休日欄に「第2火」形式で書く）。
+    // 旧nth_closed列に値が残る工場は、開くと定休日欄に合流表示され、保存で定休日列へ引っ越す。
+    var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes'];
+    function mergedClosedDays(f) {
+      var base = String(f.closed_days == null ? '' : f.closed_days).trim();
+      var nth = String(f.nth_closed == null ? '' : f.nth_closed).trim();
+      if (!nth) return base;
+      var toks = nth.split(/[;,、\s]+/).filter(function (t) { return t; }).map(function (t) {
+        return /^\d/.test(t) ? '第' + t : t;   // 旧形式「2火」→「第2火」
+      });
+      return (base ? base + ',' : '') + toks.join(',');
+    }
     var editOverlay = document.getElementById('editOverlay');
     var editMsg = document.getElementById('editMsg');
     var editingMgmt = null;
@@ -883,6 +926,7 @@
         var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
         if (el) el.value = (f[EDIT_FIELDS[k]] == null ? '' : String(f[EDIT_FIELDS[k]]));
       }
+      document.getElementById('ef_closed_days').value = mergedClosedDays(f);   // 旧「第N曜休」の値も合流表示（保存で定休日欄へ引っ越し）
       var hasLl = f.lat != null && String(f.lat) !== '' && !isNaN(Number(f.lat));
       document.getElementById('ef_coords').textContent = hasLl
         ? '座標: ' + f.lat + ', ' + f.lng + '（コピーしてカーナビ等に使えます。更新は「座標取得」）'
@@ -908,6 +952,9 @@
         changes[EDIT_FIELDS[k]] = v;
         url += '&' + EDIT_FIELDS[k] + '=' + encodeURIComponent(v);
       }
+      // 旧「第N曜休」列は定休日欄に統合済み（開いた時点で合流表示している）ので、保存で列側を空にして引っ越し完了
+      changes['nth_closed'] = '';
+      url += '&nth_closed=';
       // 入力確認済みチェック: ONなら確認日を記録（既に日付があれば保持）、OFFなら消す
       var newChecked = '';
       if (document.getElementById('ef_checked').checked) {
@@ -929,6 +976,7 @@
         for (var i = 0; i < allFactories.length; i++) {
           if (String(allFactories[i].management_no) === editingMgmt) {
             for (var kk = 0; kk < EDIT_FIELDS.length; kk++) allFactories[i][EDIT_FIELDS[kk]] = changes[EDIT_FIELDS[kk]];
+            allFactories[i].nth_closed = '';
             allFactories[i].checked_date = changes['checked_date'];
             break;
           }
