@@ -458,6 +458,7 @@
             var flexNote = '';
             if (v0.trip === '直行') flexNote = '直行 ' + esc(v0.depart_time || '') + '〜';
             else if (v0.trip === '宿泊2日目') flexNote = '宿泊2日目 9:00〜' + (d.origin_name ? '（' + esc(d.origin_name) + '発）' : '');
+            else if (v0.trip === '宿替え') flexNote = '宿替え ' + esc(v0.depart_time || '9:00') + '発' + (d.origin_name ? '（' + esc(d.origin_name) + '→）' : '');
             else if (v0.trip === '宿泊初日') flexNote = '宿泊初日 ' + esc(v0.depart_time || '9:00') + '発';
             else if (v0.flex) flexNote = esc(v0.flex) + ' ' + esc(v0.depart_time || '') + '発';
             if (flexNote) flexNote = '<br><span style="font-size:11px; color:#1d4ed8; font-weight:700;">' + flexNote + '</span>';
@@ -549,7 +550,7 @@
         var start;
         if (i === 0) {
           if (d.trip === '宿泊2日目') { start = GENJS.stayNext; v.flex = null; v.depart_time = null; }
-          else if (d.trip === '宿泊初日') { start = GENJS.stayFirstDep + trav; v.flex = null; v.depart_time = fmtJs(GENJS.stayFirstDep); }
+          else if (d.trip === '宿泊初日' || d.trip === '宿替え') { start = GENJS.stayFirstDep + trav; v.flex = null; v.depart_time = fmtJs(GENJS.stayFirstDep); }
           else if (d.trip === '直行') { start = (d.visits.length >= 5 ? GENJS.directMany : GENJS.directFew); v.flex = null; v.depart_time = fmtJs(start); }
           else {
             // F判定シートで固定された判定があればそれを使う（無ければ距離から自動判定）
