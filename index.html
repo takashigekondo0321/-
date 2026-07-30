@@ -103,6 +103,42 @@
     .ef input { font-size: 14px; }
     .erow { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     @media (max-width: 520px) { .egrid { grid-template-columns: 1fr; } }
+
+    /* ==== SF映画風ローディング画面（日程作成の待ち時間に表示） ==== */
+    #sfLoad { display: none; position: fixed; inset: 0; z-index: 9999; flex-direction: column; align-items: center; justify-content: center; gap: 30px; overflow: hidden;
+      background: radial-gradient(ellipse at center, rgba(10, 22, 40, .97) 0%, rgba(4, 8, 16, .99) 75%); }
+    #sfLoad::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(rgba(41, 211, 255, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(41, 211, 255, .05) 1px, transparent 1px);
+      background-size: 44px 44px; }
+    #sfLoad .sf-scan { position: absolute; left: 0; right: 0; height: 90px; pointer-events: none;
+      background: linear-gradient(180deg, transparent, rgba(41, 211, 255, .09), transparent); animation: sfScan 3.2s linear infinite; }
+    @keyframes sfScan { 0% { top: -14%; } 100% { top: 110%; } }
+    #sfLoad .sf-corner { position: absolute; width: 34px; height: 34px; border: 2px solid rgba(41, 211, 255, .5); }
+    #sfLoad .sf-c1 { top: 16px; left: 16px; border-right: none; border-bottom: none; }
+    #sfLoad .sf-c2 { top: 16px; right: 16px; border-left: none; border-bottom: none; }
+    #sfLoad .sf-c3 { bottom: 16px; left: 16px; border-right: none; border-top: none; }
+    #sfLoad .sf-c4 { bottom: 16px; right: 16px; border-left: none; border-top: none; }
+    #sfLoad .sf-core { position: relative; width: 220px; height: 220px; }
+    #sfLoad .sf-ring { position: absolute; border-radius: 50%; }
+    #sfLoad .sf-r1 { inset: 0; border: 2px solid rgba(41, 211, 255, .12); border-top-color: #29d3ff;
+      box-shadow: 0 0 24px rgba(41, 211, 255, .25), inset 0 0 24px rgba(41, 211, 255, .08); animation: sfSpin 1.3s linear infinite; }
+    #sfLoad .sf-r2 { inset: 16px; border: 1px dashed rgba(41, 211, 255, .45); animation: sfSpinR 7s linear infinite; }
+    #sfLoad .sf-r3 { inset: 34px; border: 3px solid transparent; border-left-color: rgba(120, 240, 255, .8); border-right-color: rgba(120, 240, 255, .25); animation: sfSpin 2.6s ease-in-out infinite; }
+    @keyframes sfSpin { to { transform: rotate(360deg); } }
+    @keyframes sfSpinR { to { transform: rotate(-360deg); } }
+    #sfLoad .sf-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    #sfLoad #sfPct { font-family: Consolas, 'Courier New', monospace; font-size: 44px; font-weight: 700; color: #bdf3ff; text-shadow: 0 0 14px rgba(41, 211, 255, .9); letter-spacing: 1px; }
+    #sfLoad #sfPct span { font-size: 20px; color: #4fc3e8; }
+    #sfLoad .sf-label { margin-top: 2px; font-family: Consolas, monospace; font-size: 11px; letter-spacing: 5px; color: #4fc3e8; animation: sfBlink 1.6s ease-in-out infinite; }
+    @keyframes sfBlink { 50% { opacity: .35; } }
+    #sfLoad .sf-msgbox { position: relative; width: min(520px, 86vw); text-align: center; }
+    #sfLoad #sfMsg { color: #d8f6ff; font-size: 15px; min-height: 22px; text-shadow: 0 0 8px rgba(41, 211, 255, .5); }
+    #sfLoad .sf-bar { margin: 12px auto 6px; height: 10px; border: 1px solid rgba(41, 211, 255, .4); padding: 2px; border-radius: 3px; }
+    #sfLoad #sfBarFill { display: block; height: 100%; width: 0%; border-radius: 2px;
+      background: repeating-linear-gradient(90deg, #29d3ff 0 8px, rgba(41, 211, 255, .35) 8px 12px);
+      box-shadow: 0 0 10px rgba(41, 211, 255, .7); transition: width .25s ease; }
+    #sfLoad .sf-sub { font-family: Consolas, monospace; font-size: 10px; letter-spacing: 3px; color: rgba(140, 220, 245, .55); margin-top: 4px; }
+    @media print { #sfLoad { display: none !important; } }
   </style>
 </head>
 <body>
@@ -506,12 +542,57 @@
       genInfoEl.textContent = '';
     }
 
+    // ---- SF映画風ローディング画面（日程作成の待ち時間に表示） ----
+    //   進捗は疑似カウント（通信が終わるまで97%へゆっくり近づき、完了で100%→フェードアウト）
+    var sfPctTimer = null, sfMsgTimer = null, sfPctVal = 0, sfMsgIdx = 0;
+    var SF_MSGS = [
+      '工場データを取得しています…',
+      '満了日と定休日を確認しています…',
+      '班と宿泊地を割り当てています…',
+      '実道路ルートを計算しています…',
+      '週ごとの担当エリアを調整しています…',
+      '訪問順と時刻を最終調整しています…'
+    ];
+    function sfLoadShow(subtitle) {
+      var el = document.getElementById('sfLoad');
+      if (!el) return;
+      clearInterval(sfPctTimer); clearInterval(sfMsgTimer);
+      el.style.display = 'flex';
+      document.getElementById('sfSub').textContent = subtitle || 'SCHEDULE GENERATOR';
+      document.getElementById('sfMsg').textContent = SF_MSGS[0];
+      document.getElementById('sfPct').innerHTML = '0<span>%</span>';
+      document.getElementById('sfBarFill').style.width = '0%';
+      sfPctVal = 0; sfMsgIdx = 0;
+      var t0 = Date.now();
+      sfPctTimer = setInterval(function () {
+        var sec = (Date.now() - t0) / 1000;
+        var target = 97 * (1 - Math.exp(-sec / 10));
+        if (target > sfPctVal) sfPctVal = target;
+        var p = Math.floor(sfPctVal);
+        document.getElementById('sfPct').innerHTML = p + '<span>%</span>';
+        document.getElementById('sfBarFill').style.width = p + '%';
+      }, 120);
+      sfMsgTimer = setInterval(function () {
+        sfMsgIdx = (sfMsgIdx + 1) % SF_MSGS.length;
+        document.getElementById('sfMsg').textContent = SF_MSGS[sfMsgIdx];
+      }, 3000);
+    }
+    function sfLoadHide() {
+      var el = document.getElementById('sfLoad');
+      if (!el) return;
+      clearInterval(sfPctTimer); clearInterval(sfMsgTimer);
+      document.getElementById('sfPct').innerHTML = '100<span>%</span>';
+      document.getElementById('sfBarFill').style.width = '100%';
+      document.getElementById('sfMsg').textContent = '完了しました';
+      setTimeout(function () { el.style.display = 'none'; }, 450);
+    }
+
     // ---- 手直し用: 1日分の時刻をブラウザ側で再計算（サーバと同じルール） ----
     var GENJS = {
       branchLat: 35.140366, branchLng: 136.922104,
       shortKm: 15, spNear: 20, spFar: 50,
       lunchStart: 690, lunchMin: 60, maxAm: 2,
-      lastStart: 990, lastEnd: 1050, minInt: 30, hopMin: 10,
+      lastStart: 960, lastEnd: 1050, minInt: 30, hopMin: 10,   // 最終訪問の開始は16:00(=960分)まで
       f1Min: 35, f2Min: 20, depF1: 510, depF2: 525, depF3: 540,
       directMany: 570, directFew: 580, stayNext: 540, stayFirstDep: 540
     };
@@ -615,6 +696,7 @@
       var e = isoD(last);
       var viewIso = isoD(viewStart);
       genStatus('作成中...（数秒かかります）');
+      sfLoadShow('MONTHLY SCHEDULE ' + ym);
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(isoD(genStart)) + '&end=' + encodeURIComponent(e) +
           '&unscheduled_from=' + encodeURIComponent(viewIso) + '&token=' + encodeURIComponent(apiToken());
@@ -629,6 +711,8 @@
         renderMonthDetail(curMonthDays, genRowsEl);
       } catch (err) {
         genStatus('通信に失敗しました: ' + err, true);
+      } finally {
+        sfLoadHide();
       }
     }
     genBtn.addEventListener('click', generate);
@@ -761,6 +845,7 @@
       var s = t.toISOString().slice(0, 10);
       var e = new Date(t.getTime() + 365 * 86400000).toISOString().slice(0, 10);
       annStatus('作成中...（1年分は数秒かかります）');
+      sfLoadShow('ANNUAL PLAN');
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
         var res = await fetch(url);
@@ -769,6 +854,8 @@
         renderAnnual(data);
       } catch (err) {
         annStatus('通信に失敗しました: ' + err, true);
+      } finally {
+        sfLoadHide();
       }
     }
     function renderAnnual(data) {
@@ -1046,5 +1133,25 @@
 
     if (apiInput.value && tokenInput.value) load();
   </script>
+
+  <!-- SF風ローディング画面（日程作成中に表示・sfLoadShow/sfLoadHideで制御） -->
+  <div id="sfLoad" aria-hidden="true">
+    <i class="sf-corner sf-c1"></i><i class="sf-corner sf-c2"></i><i class="sf-corner sf-c3"></i><i class="sf-corner sf-c4"></i>
+    <div class="sf-scan"></div>
+    <div class="sf-core">
+      <div class="sf-ring sf-r1"></div>
+      <div class="sf-ring sf-r2"></div>
+      <div class="sf-ring sf-r3"></div>
+      <div class="sf-center">
+        <div id="sfPct">0<span>%</span></div>
+        <div class="sf-label">GENERATING</div>
+      </div>
+    </div>
+    <div class="sf-msgbox">
+      <div id="sfMsg">準備しています…</div>
+      <div class="sf-bar"><i id="sfBarFill"></i></div>
+      <div class="sf-sub" id="sfSub">SCHEDULE GENERATOR</div>
+    </div>
+  </div>
 </body>
 </html>
