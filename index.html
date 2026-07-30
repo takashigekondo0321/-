@@ -636,9 +636,11 @@
           else {
             // F判定シートで固定された判定があればそれを使う（無ければ距離から自動判定）
             var dep;
-            if (d.flex_fixed === 'F1') dep = { m: GENJS.depF1, l: 'F1' };
-            else if (d.flex_fixed === 'F2') dep = { m: GENJS.depF2, l: 'F2' };
-            else if (d.flex_fixed === 'F3') dep = { m: GENJS.depF3, l: 'F3' };
+            var ffx = d.flex_fixed;
+            if (ffx === 'F1' && d.weekday === '金') ffx = 'F3';   // F1地区でも金曜だけはF3(9:00発)
+            if (ffx === 'F1') dep = { m: GENJS.depF1, l: 'F1' };
+            else if (ffx === 'F2') dep = { m: GENJS.depF2, l: 'F2' };
+            else if (ffx === 'F3') dep = { m: GENJS.depF3, l: 'F3' };
             else dep = trav >= GENJS.f1Min ? { m: GENJS.depF1, l: 'F1' } : trav >= GENJS.f2Min ? { m: GENJS.depF2, l: 'F2' } : { m: GENJS.depF3, l: 'F3' };
             start = dep.m + trav; v.flex = dep.l; v.depart_time = fmtJs(dep.m);
           }
