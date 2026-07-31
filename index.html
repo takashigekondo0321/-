@@ -59,6 +59,11 @@
     .editbtn { background: #fff; color: var(--accent); border: 1px solid #bfd7fd; padding: 3px 10px; font-size: 12px; border-radius: 7px; box-shadow: none; font-weight: 600; }
     .editbtn:hover { background: #eaf2ff; filter: none; box-shadow: none; }
     td.names { white-space: normal; min-width: 320px; line-height: 1.7; }
+    /* スケジュール表: 列が多いので余白を詰めて1画面に収める */
+    .sched th, .sched td { padding: 8px 7px; }
+    .sched td.names { min-width: 230px; }
+    .sched td.col-closed { font-size: 11px; color: #b91c1c; white-space: nowrap; }
+    .sched td.col-note { font-size: 11px; color: #475569; white-space: normal; min-width: 80px; max-width: 130px; line-height: 1.5; }
     tr.teamrow td { background: linear-gradient(90deg, #e3edff, #eef4ff); font-weight: 700; color: #1e40af; border-left: 4px solid #2563eb; }
     tr.daystart td { border-top: 2px solid #b6c4da; }
     #editOverlay { position: fixed; inset: 0; background: rgba(8,14,30,.5); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
@@ -191,7 +196,7 @@
       </div>
       <p class="muted" id="genInfo" style="margin-top:0"></p>
       <div class="card">
-        <table>
+        <table class="sched">
           <thead>
             <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>定休日</th><th>特記事項</th><th>地区</th><th class="col-ctl">操作</th><th class="col-map">経路</th></tr>
           </thead>
@@ -528,8 +533,8 @@
                 (mapsPointText(v)
                   ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mapsPointText(v)) + '" target="_blank" rel="noopener" title="この工場をGoogleマップで開く（分離帯・入口の確認用）' + (v.lat != null && !isNaN(Number(v.lat)) ? '　座標: ' + v.lat + ', ' + v.lng : '') + '" style="text-decoration:none">📍</a>'
                   : '') + '</td>' +
-                '<td style="font-size:11px; color:#b91c1c; white-space:nowrap;">' + esc(v.closed_days || '') + '</td>' +
-                '<td style="font-size:11px; color:#475569; max-width:110px;">' + esc(v.notes || '') + '</td>' +
+                '<td class="col-closed">' + esc(v.closed_days || '') + '</td>' +
+                '<td class="col-note">' + esc(v.notes || '') + '</td>' +
                 '<td>' + esc(v.district) + '</td>' + ctl + mapCell;
               rowsTarget.appendChild(tr);
             });
