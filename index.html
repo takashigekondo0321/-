@@ -193,9 +193,9 @@
       <div class="card">
         <table>
           <thead>
-            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>地区</th><th class="col-ctl">操作</th><th class="col-map">経路</th></tr>
+            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>定休日</th><th>特記事項</th><th>地区</th><th class="col-ctl">操作</th><th class="col-map">経路</th></tr>
           </thead>
-          <tbody id="genRows"><tr><td colspan="9" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
+          <tbody id="genRows"><tr><td colspan="11" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -450,7 +450,7 @@
     // ↑↓で順番入替・✕で削除・＋で工場追加ができ、時刻はその場で再計算される。
     function renderMonthDetail(days, rowsTarget) {
       if (days.length === 0) {
-        rowsTarget.innerHTML = '<tr><td colspan="9" class="status">この期間に組める工場がありませんでした</td></tr>';
+        rowsTarget.innerHTML = '<tr><td colspan="11" class="status">この期間に組める工場がありませんでした</td></tr>';
         return;
       }
       rowsTarget.innerHTML = '';
@@ -466,7 +466,7 @@
       weeks.forEach(function (wk) {
         var gr = document.createElement('tr');
         gr.className = 'group';
-        gr.innerHTML = '<td colspan="9">📅 ' + esc(wk) + '</td>';
+        gr.innerHTML = '<td colspan="11">📅 ' + esc(wk) + '</td>';
         rowsTarget.appendChild(gr);
 
         // 週の中を班ごとにまとめる（A班→B班→…）
@@ -481,7 +481,7 @@
         teams.forEach(function (t) {
           var tr0 = document.createElement('tr');
           tr0.className = 'teamrow';
-          tr0.innerHTML = '<td colspan="9">' + esc((TEAM_CHARS.charAt(t - 1) || t) + '班') + '</td>';
+          tr0.innerHTML = '<td colspan="11">' + esc((TEAM_CHARS.charAt(t - 1) || t) + '班') + '</td>';
           rowsTarget.appendChild(tr0);
 
           tMap[t].sort(function (a, b) { return a.date < b.date ? -1 : 1; });
@@ -528,6 +528,8 @@
                 (mapsPointText(v)
                   ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mapsPointText(v)) + '" target="_blank" rel="noopener" title="この工場をGoogleマップで開く（分離帯・入口の確認用）' + (v.lat != null && !isNaN(Number(v.lat)) ? '　座標: ' + v.lat + ', ' + v.lng : '') + '" style="text-decoration:none">📍</a>'
                   : '') + '</td>' +
+                '<td style="font-size:11px; color:#b91c1c; white-space:nowrap;">' + esc(v.closed_days || '') + '</td>' +
+                '<td style="font-size:11px; color:#475569; max-width:110px;">' + esc(v.notes || '') + '</td>' +
                 '<td>' + esc(v.district) + '</td>' + ctl + mapCell;
               rowsTarget.appendChild(tr);
             });
@@ -538,7 +540,7 @@
 
     // ---- スケジュール作成（1か月分・週区切り・経路リンク付き）----
     function genStatus(msg, isErr) {
-      genRowsEl.innerHTML = '<tr><td colspan="9" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      genRowsEl.innerHTML = '<tr><td colspan="11" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
       genInfoEl.textContent = '';
     }
 
