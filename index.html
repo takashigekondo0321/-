@@ -234,7 +234,35 @@
           <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" placeholder="空欄=機器形態から自動" title="空欄にすると機器形態から自動計算します（一般70/CS80/自動H80/BS100/CS+BS90/CS+BS+自動H110）" /></label>
           <label class="ef">班ID<input id="ef_default_team_id" /></label>
           <label class="ef">コース<input id="ef_course_group" /></label>
-          <label class="ef" style="grid-column:1/-1">特記事項（例: 午前希望 / 午後希望 / 31日不可 / 月末不可 / 21日以降希望 / 週末希望 / 8月希望）<input id="ef_notes" placeholder="午前希望 31日不可 など（スペース区切り）" /></label>
+          <label class="ef">時間帯・順番の希望
+            <select id="ef_time_pref">
+              <option value="">指定なし</option>
+              <option value="午前">午前（前半に配置）</option>
+              <option value="午後">午後（後半に配置）</option>
+              <option value="朝一">朝一（必ず1件目）</option>
+              <option value="1件目不可">1件目にしない</option>
+            </select></label>
+          <div class="ef">訪問時期の希望
+            <div style="display:flex; gap:6px;">
+              <select id="pp_month" style="flex:1"><option value="">指定なし</option></select>
+              <select id="pp_band" style="flex:1">
+                <option value="">月全体</option><option value="上旬">上旬(1〜10日)</option>
+                <option value="中旬">中旬(11〜20日)</option><option value="下旬">下旬(21日〜)</option>
+              </select>
+            </div>
+            <input type="hidden" id="ef_period_pref" />
+          </div>
+          <div class="ef">曜日の希望（チェックした曜日<b>だけ</b>に組む）
+            <div id="dpBox" style="padding:4px 0"></div>
+            <input type="hidden" id="ef_day_pref" />
+          </div>
+          <div class="ef">曜日の不可（チェックした曜日は<b>避ける</b>）
+            <div id="dnBox" style="padding:4px 0"></div>
+            <input type="hidden" id="ef_day_ng" />
+          </div>
+          <label class="ef">この日までに校正（締切）<input id="ef_deadline" type="date" title="満了日より早い締切がある場合に指定（例: 先方の都合で10/20まで）。日程はこの日を満了とみなして組みます" /></label>
+          <label class="ef">セット校正の相手（管理番号）<input id="ef_set_host" type="number" placeholder="例: 623" title="機器をこの番号の工場へ持ち込んで同時に校正する場合に指定（例: 828タカキタ→623三重ダイハツ名張）" /></label>
+          <label class="ef" style="grid-column:1/-1">特記事項（自由メモ。「訪問前にTEL」等。上の条件はなるべくスイッチ・選択で）<input id="ef_notes" placeholder="訪問前にTELすること など" /></label>
           <label class="ef" style="grid-column:1/-1; flex-direction:row; align-items:center; gap:8px; background:#eafaf0; border:1px solid #b7e4c7; border-radius:8px; padding:8px 10px;">
             <input type="checkbox" id="ef_checked" style="width:auto;" />
             <span>✅ <b>入力確認済み</b>にする（チェックして保存すると確認日が記録され、一覧に✅が付きます）<span id="ef_checkedDate" style="color:#64748b;"></span></span>
@@ -534,7 +562,7 @@
                   ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mapsPointText(v)) + '" target="_blank" rel="noopener" title="この工場をGoogleマップで開く（分離帯・入口の確認用）' + (v.lat != null && !isNaN(Number(v.lat)) ? '　座標: ' + v.lat + ', ' + v.lng : '') + '" style="text-decoration:none">📍</a>'
                   : '') + '</td>' +
                 '<td class="col-closed">' + esc(v.closed_days || '') + '</td>' +
-                '<td class="col-note">' + esc(v.notes || '') + '</td>' +
+                '<td class="col-note">' + (v.conds ? '<b style="color:#1d4ed8">【' + esc(v.conds) + '】</b> ' : '') + esc(v.notes || '') + '</td>' +
                 '<td>' + esc(v.district) + '</td>' + ctl + mapCell;
               rowsTarget.appendChild(tr);
             });
@@ -997,7 +1025,8 @@
     // ---- 工場の編集 ----
     // 旧「第N曜休」欄は「定休日」欄に統合（定休日欄に「第2火」形式で書く）。
     // 旧nth_closed列に値が残る工場は、開くと定休日欄に合流表示され、保存で定休日列へ引っ越す。
-    var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes'];
+    var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes',
+      'time_pref', 'day_pref', 'day_ng', 'period_pref', 'deadline', 'set_host'];   // 訪問条件の構造化列（スイッチ・選択式）
     function mergedClosedDays(f) {
       var base = String(f.closed_days == null ? '' : f.closed_days).trim();
       var nth = String(f.nth_closed == null ? '' : f.nth_closed).trim();
@@ -1011,6 +1040,47 @@
     var editMsg = document.getElementById('editMsg');
     var editingMgmt = null;
 
+    // ---- 訪問条件のスイッチ・選択（曜日チェックと時期セレクトを隠し入力欄と同期） ----
+    (function initCondWidgets() {
+      var WDS = ['月', '火', '水', '木', '金'];
+      ['dpBox|ef_day_pref', 'dnBox|ef_day_ng'].forEach(function (pair) {
+        var p = pair.split('|'), box = document.getElementById(p[0]);
+        WDS.forEach(function (w) {
+          var lb = document.createElement('label');
+          lb.style.cssText = 'display:inline-flex; align-items:center; gap:3px; margin-right:10px; font-size:13px; color:#334155;';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox'; cb.value = w; cb.style.width = 'auto';
+          cb.addEventListener('change', function () {
+            var sel = [];
+            box.querySelectorAll('input').forEach(function (c) { if (c.checked) sel.push(c.value); });
+            document.getElementById(p[1]).value = sel.join(',');
+          });
+          lb.appendChild(cb); lb.appendChild(document.createTextNode(w));
+          box.appendChild(lb);
+        });
+      });
+      var pm = document.getElementById('pp_month');
+      for (var m = 1; m <= 12; m++) { var op = document.createElement('option'); op.value = m + '月'; op.textContent = m + '月'; pm.appendChild(op); }
+      function syncPp() {
+        var mo = pm.value, bd = document.getElementById('pp_band').value;
+        document.getElementById('ef_period_pref').value = mo ? (mo + bd) : '';
+      }
+      pm.addEventListener('change', syncPp);
+      document.getElementById('pp_band').addEventListener('change', syncPp);
+    })();
+    // 隠し入力欄の値からスイッチ・選択の表示を復元（編集画面を開いたとき用）
+    function condWidgetsFromValues() {
+      ['dpBox|ef_day_pref', 'dnBox|ef_day_ng'].forEach(function (pair) {
+        var p = pair.split('|');
+        var v = document.getElementById(p[1]).value || '';
+        document.getElementById(p[0]).querySelectorAll('input').forEach(function (cb) { cb.checked = v.indexOf(cb.value) >= 0; });
+      });
+      var v2 = document.getElementById('ef_period_pref').value || '';
+      var mm = v2.match(/(\d{1,2})月/);
+      document.getElementById('pp_month').value = mm ? (mm[1] + '月') : '';
+      document.getElementById('pp_band').value = /上旬|初旬/.test(v2) ? '上旬' : /中旬/.test(v2) ? '中旬' : /下旬/.test(v2) ? '下旬' : '';
+    }
+
     function openEdit(mgmt) {
       var f = null;
       for (var i = 0; i < allFactories.length; i++) {
@@ -1023,6 +1093,7 @@
         var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
         if (el) el.value = (f[EDIT_FIELDS[k]] == null ? '' : String(f[EDIT_FIELDS[k]]));
       }
+      condWidgetsFromValues();   // 曜日チェック・時期セレクトへ反映
       document.getElementById('ef_closed_days').value = mergedClosedDays(f);   // 旧「第N曜休」の値も合流表示（保存で定休日欄へ引っ越し）
       var hasLl = f.lat != null && String(f.lat) !== '' && !isNaN(Number(f.lat));
       document.getElementById('ef_coords').textContent = hasLl
