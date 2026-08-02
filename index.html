@@ -269,6 +269,7 @@
           </div>
           <label class="ef">この日までに校正（締切）<input id="ef_deadline" type="date" title="満了日より早い締切がある場合に指定（例: 先方の都合で10/20まで）。日程はこの日を満了とみなして組みます" /></label>
           <label class="ef">セット校正の相手（管理番号）<input id="ef_set_host" type="number" placeholder="例: 623" title="機器をこの番号の工場へ持ち込んで同時に校正する場合に指定（例: 828タカキタ→623三重ダイハツ名張）" /></label>
+          <label class="ef">同日に校正する工場（系列・管理番号）<input id="ef_same_day" type="number" placeholder="例: 103" title="系列店など「同じ日にまとめて回りたい」相手の管理番号。満了日がずれていても早い方に合わせて、なるべく同じ日・同じ班で組まれます" /></label>
           <label class="ef" style="grid-column:1/-1">特記事項（自由メモ。「訪問前にTEL」等。上の条件はなるべくスイッチ・選択で）<input id="ef_notes" placeholder="訪問前にTELすること など" /></label>
           <label class="ef" style="grid-column:1/-1; flex-direction:row; align-items:center; gap:8px; background:#eafaf0; border:1px solid #b7e4c7; border-radius:8px; padding:8px 10px;">
             <input type="checkbox" id="ef_checked" style="width:auto;" />
@@ -1038,7 +1039,7 @@
     // 旧「第N曜休」欄は「定休日」欄に統合（定休日欄に「第2火」形式で書く）。
     // 旧nth_closed列に値が残る工場は、開くと定休日欄に合流表示され、保存で定休日列へ引っ越す。
     var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes',
-      'time_pref', 'day_pref', 'day_ng', 'period_pref', 'deadline', 'set_host', 'visit_from'];   // 訪問条件の構造化列（スイッチ・選択式）
+      'time_pref', 'day_pref', 'day_ng', 'period_pref', 'deadline', 'set_host', 'visit_from', 'same_day'];   // 訪問条件の構造化列（スイッチ・選択式）
     function mergedClosedDays(f) {
       var base = String(f.closed_days == null ? '' : f.closed_days).trim();
       var nth = String(f.nth_closed == null ? '' : f.nth_closed).trim();
