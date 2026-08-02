@@ -229,6 +229,13 @@
           <label class="ef">満了日<input id="ef_expiry_date" type="date" /></label>
           <label class="ef">定休日<input id="ef_closed_days" placeholder="例: 火,水,第2月" title="毎週の定休は曜日1文字（火,水）、第N曜の休みは「第2火」のように書きます。カンマ区切りで混在OK（例: 水,第2火,第4火）" /></label>
           <label class="ef">機器形態<input id="ef_equipment_type" placeholder="例: CS,BS" /></label>
+          <label class="ef">訪問可能時間（この時刻から訪問OK）
+            <select id="ef_visit_from" title="始業時刻とは別に「訪問はこの時刻から受け入れ」がある場合に指定。日程はこの時刻より前に開始しません">
+              <option value="">指定なし（始業から）</option>
+              <option value="09:00">09:00</option>
+              <option value="09:30">09:30</option>
+              <option value="10:00">10:00</option>
+            </select></label>
           <label class="ef">始業<input id="ef_opening_time" placeholder="例: 09:00" /></label>
           <label class="ef">終業<input id="ef_closing_time" placeholder="例: 17:30" /></label>
           <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" placeholder="空欄=機器形態から自動" title="空欄にすると機器形態から自動計算します（一般70/CS80/自動H80/BS100/CS+BS90/CS+BS+自動H110）" /></label>
@@ -601,7 +608,10 @@
       var t0 = Date.now();
       sfPctTimer = setInterval(function () {
         var sec = (Date.now() - t0) / 1000;
-        var target = 97 * (1 - Math.exp(-sec / 10));
+        // ゆっくり進む疑似進捗: 序盤もおだやかに、後半も毎秒少しずつ進み続けて97%で待つ
+        //   （目安: 30秒時点で約72% / 60秒で約93%。完了した瞬間に100%になる）
+        var target = 90 * (1 - Math.exp(-sec / 22)) + sec * 0.15;
+        if (target > 97) target = 97;
         if (target > sfPctVal) sfPctVal = target;
         var p = Math.floor(sfPctVal);
         document.getElementById('sfPct').innerHTML = p + '<span>%</span>';
@@ -694,6 +704,8 @@
           if (ns.indexOf('9:40可') >= 0) open = Math.min(open, 580);
           if (start < open) start = open;
         }
+        var vFrom = v.visit_from ? hmJs(v.visit_from) : null;   // 訪問可能時間より前には開始しない
+        if (vFrom !== null && vFrom > 0 && start < vFrom) start = vFrom;
         if (start >= 720 && start < 780) { start = 780; lunch = true; }   // 12時台は開始しない（13:00ちょうどはOK）
         var stay = Number(v.stay_min) || 70;
         var end = start + stay;
@@ -804,7 +816,7 @@
           address: f.address, lat: Number(f.lat), lng: Number(f.lng),
           stay_min: Number(f.stay_duration_min) || stayFromEqJs(f.equipment_type),
           equipment_type: f.equipment_type || '',
-          opening_time: f.opening_time || '', closing_time: f.closing_time || '', notes: f.notes || '',
+          opening_time: f.opening_time || '', closing_time: f.closing_time || '', visit_from: f.visit_from || '', notes: f.notes || '',
           expiry_date: f.expiry_date || '', closed_days: f.closed_days || '', warnings: []
         });
       } else {
@@ -1026,7 +1038,7 @@
     // 旧「第N曜休」欄は「定休日」欄に統合（定休日欄に「第2火」形式で書く）。
     // 旧nth_closed列に値が残る工場は、開くと定休日欄に合流表示され、保存で定休日列へ引っ越す。
     var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes',
-      'time_pref', 'day_pref', 'day_ng', 'period_pref', 'deadline', 'set_host'];   // 訪問条件の構造化列（スイッチ・選択式）
+      'time_pref', 'day_pref', 'day_ng', 'period_pref', 'deadline', 'set_host', 'visit_from'];   // 訪問条件の構造化列（スイッチ・選択式）
     function mergedClosedDays(f) {
       var base = String(f.closed_days == null ? '' : f.closed_days).trim();
       var nth = String(f.nth_closed == null ? '' : f.nth_closed).trim();
@@ -1161,6 +1173,7 @@
               vv.notes = changes['notes'] || '';
               vv.opening_time = changes['opening_time'] || '';
               vv.closing_time = changes['closing_time'] || '';
+              vv.visit_from = changes['visit_from'] || '';
               vv.expiry_date = changes['expiry_date'] || vv.expiry_date;
               if (changes['stay_duration_min'] && !isNaN(Number(changes['stay_duration_min']))) {
                 vv.stay_min = Number(changes['stay_duration_min']);
