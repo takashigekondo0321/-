@@ -243,8 +243,7 @@
           <label class="ef">始業<input id="ef_opening_time" placeholder="例: 09:00" /></label>
           <label class="ef">終業<input id="ef_closing_time" placeholder="例: 17:30" /></label>
           <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" placeholder="空欄=機器形態から自動" title="空欄にすると機器形態から自動計算します（一般70/CS80/自動H80/BS100/CS+BS90/CS+BS+自動H110）" /></label>
-          <label class="ef">班ID<input id="ef_default_team_id" /></label>
-          <label class="ef">コース<input id="ef_course_group" /></label>
+          <label class="ef">避ける日（この日は訪問しない）<input id="ef_avoid_date" type="date" title="点検・棚卸し・行事などで「この日だけは来ないでほしい」日を1日指定できます。日程はその日を避けて組まれます" /></label>
           <label class="ef">時間帯・順番の希望
             <select id="ef_time_pref">
               <option value="">指定なし</option>
@@ -252,6 +251,8 @@
               <option value="午後">午後（後半に配置）</option>
               <option value="朝一">朝一（必ず1件目）</option>
               <option value="1件目不可">1件目にしない</option>
+              <option value="2件目不可">2件目にしない</option>
+              <option value="15時以降">15時以降（15:00より前に開始しない）</option>
             </select></label>
           <div class="ef">訪問時期の希望
             <div style="display:flex; gap:6px;">
@@ -711,6 +712,8 @@
         }
         var vFrom = v.visit_from ? hmJs(v.visit_from) : null;   // 訪問可能時間より前には開始しない
         if (vFrom !== null && vFrom > 0 && start < vFrom) start = vFrom;
+        // 「15時以降」指定: 15:00より前には開始しない（手直しでも維持）
+        if ((v.time_pref === '15時以降' || String(v.notes || '').indexOf('15時以降') >= 0) && start < 900) start = 900;
         if (start >= 720 && start < 780) { start = 780; lunch = true; }   // 12時台は開始しない（13:00ちょうどはOK）
         var stay = Number(v.stay_min) || 70;
         var end = start + stay;
@@ -821,7 +824,7 @@
           address: f.address, lat: Number(f.lat), lng: Number(f.lng),
           stay_min: Number(f.stay_duration_min) || stayFromEqJs(f.equipment_type),
           equipment_type: f.equipment_type || '',
-          opening_time: f.opening_time || '', closing_time: f.closing_time || '', visit_from: f.visit_from || '', notes: f.notes || '',
+          opening_time: f.opening_time || '', closing_time: f.closing_time || '', visit_from: f.visit_from || '', time_pref: f.time_pref || '', notes: f.notes || '',
           expiry_date: f.expiry_date || '', closed_days: f.closed_days || '', warnings: []
         });
       } else {
@@ -1042,7 +1045,7 @@
     // ---- 工場の編集 ----
     // 旧「第N曜休」欄は「定休日」欄に統合（定休日欄に「第2火」形式で書く）。
     // 旧nth_closed列に値が残る工場は、開くと定休日欄に合流表示され、保存で定休日列へ引っ越す。
-    var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'default_team_id', 'course_group', 'notes',
+    var EDIT_FIELDS = ['office_name', 'expiry_date', 'closed_days', 'equipment_type', 'opening_time', 'closing_time', 'stay_duration_min', 'avoid_date', 'notes',
       'time_pref', 'day_pref', 'day_ng', 'period_pref', 'deadline', 'set_host', 'visit_from', 'same_day'];   // 訪問条件の構造化列（スイッチ・選択式）
     function mergedClosedDays(f) {
       var base = String(f.closed_days == null ? '' : f.closed_days).trim();
@@ -1179,6 +1182,7 @@
               vv.opening_time = changes['opening_time'] || '';
               vv.closing_time = changes['closing_time'] || '';
               vv.visit_from = changes['visit_from'] || '';
+              vv.time_pref = changes['time_pref'] || '';
               vv.expiry_date = changes['expiry_date'] || vv.expiry_date;
               if (changes['stay_duration_min'] && !isNaN(Number(changes['stay_duration_min']))) {
                 vv.stay_min = Number(changes['stay_duration_min']);
