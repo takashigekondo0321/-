@@ -354,6 +354,26 @@
       return t;
     }
 
+    // 「Failed to fetch」（通信失敗）の原因を自動で切り分ける:
+    //   ping（合言葉なしの疎通確認）が通る → サーバは生きている＝作成処理がGoogleの制限時間(6分)で打ち切られた可能性が高い
+    //   pingも失敗 → URLの間違い・再デプロイでURLが変わった・アクセス権が「全員」でない・ネット切断
+    async function fetchFailMsg(base, err) {
+      var head = '通信に失敗しました: ' + err + ' ';
+      try {
+        var r = await fetch(base + '?action=ping', { cache: 'no-store' });
+        var o = await r.json();
+        if (o && o.status === 'ok') {
+          return head + '→ 接続先(GAS)は動いています。作成処理がGoogleの制限時間（6分）内に終わらなかった可能性が高いです。' +
+            'もう一度作成ボタンを押してください（2回目は道路計算の結果が保存されているため速く終わります）。' +
+            '何度も失敗する場合は、少し時間をおいてから再実行してください。';
+        }
+      } catch (e2) { /* pingも失敗 → 下の案内へ */ }
+      return head + '→ 接続先に届いていません。次を確認してください: ' +
+        '① 上部の設定のURLが正しいか（再デプロイで「新しいデプロイ」を作るとURLが変わります。その場合は新しい /exec のURLを貼り直して保存） ' +
+        '② Apps Scriptの「デプロイを管理」で「アクセスできるユーザー」が「全員」になっているか ' +
+        '③ インターネットに接続できているか';
+    }
+
     async function load() {
       var base = apiUrl();
       if (!base) { setStatus('先にApps ScriptのURLを貼り付けてください', true); return; }
@@ -367,7 +387,7 @@
         buildDistrictOptions();
         render();
       } catch (e) {
-        setStatus('通信に失敗しました: ' + e + '（URLが正しいか、デプロイのアクセス権が「全員」か確認してください）', true);
+        setStatus(await fetchFailMsg(base, e), true);
       }
     }
 
@@ -755,7 +775,7 @@
       }
       var e = isoD(last);
       var viewIso = isoD(viewStart);
-      genStatus('作成中...（数秒かかります）');
+      genStatus('作成中...（1〜3分かかることがあります。画面を閉じずにお待ちください）');
       sfLoadShow('MONTHLY SCHEDULE ' + ym);
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(isoD(genStart)) + '&end=' + encodeURIComponent(e) +
@@ -770,7 +790,7 @@
           (data.unscheduled_count > 0 ? ' ／ ⚠ この期間に満了なのに未割当 ' + data.unscheduled_count + '件（年間計画タブで確認）' : '');
         renderMonthDetail(curMonthDays, genRowsEl);
       } catch (err) {
-        genStatus('通信に失敗しました: ' + err, true);
+        genStatus(await fetchFailMsg(base, err), true);
       } finally {
         sfLoadHide();
       }
@@ -904,7 +924,7 @@
       var t = new Date();
       var s = t.toISOString().slice(0, 10);
       var e = new Date(t.getTime() + 365 * 86400000).toISOString().slice(0, 10);
-      annStatus('作成中...（1年分は数秒かかります）');
+      annStatus('作成中...（1年分は数分かかることがあります。画面を閉じずにお待ちください）');
       sfLoadShow('ANNUAL PLAN');
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
@@ -913,7 +933,7 @@
         if (data.error) { annStatus('エラー: ' + data.error, true); return; }
         renderAnnual(data);
       } catch (err) {
-        annStatus('通信に失敗しました: ' + err, true);
+        annStatus(await fetchFailMsg(base, err), true);
       } finally {
         sfLoadHide();
       }
