@@ -252,6 +252,7 @@
               <option value="朝一">朝一（必ず1件目）</option>
               <option value="1件目不可">1件目にしない</option>
               <option value="2件目不可">2件目にしない</option>
+              <option value="昼一">昼一（昼休み明けの1件目・13:00開始）</option>
               <option value="15時以降">15時以降（15:00より前に開始しない）</option>
             </select></label>
           <div class="ef">訪問時期の希望
@@ -714,6 +715,8 @@
         if (vFrom !== null && vFrom > 0 && start < vFrom) start = vFrom;
         // 「15時以降」指定: 15:00より前には開始しない（手直しでも維持）
         if ((v.time_pref === '15時以降' || String(v.notes || '').indexOf('15時以降') >= 0) && start < 900) start = 900;
+        // 「昼一」指定: 13:00より前には開始しない（手直しでも維持）
+        if ((v.time_pref === '昼一' || String(v.notes || '').indexOf('昼一') >= 0) && start < 780) { start = 780; lunch = true; }
         if (start >= 720 && start < 780) { start = 780; lunch = true; }   // 12時台は開始しない（13:00ちょうどはOK）
         var stay = Number(v.stay_min) || 70;
         var end = start + stay;
