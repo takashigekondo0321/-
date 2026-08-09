@@ -600,8 +600,20 @@
               var travNote = (i > 0 && Number(v.travel_minutes) >= 11)
                 ? '<span style="display:block; font-size:10px; color:#b45309; font-weight:700;" title="前の工場からの移動時間">↓移動' + esc(v.travel_minutes) + '分</span>'
                 : '';
+              // 1件目=営業開始時間 / 最終=営業終了時間 を訪問時刻の下に表示（未入力なら注意表示）
+              var bizNote = '';
+              if (i === 0) {
+                bizNote += String(v.opening_time || '').trim()
+                  ? '<span style="display:block; font-size:10px; color:#047857; font-weight:700;" title="この工場の営業開始時間">営業' + esc(v.opening_time) + '〜</span>'
+                  : '<span style="display:block; font-size:10px; color:#d97706;" title="営業開始時間が未入力です（編集画面から入力すると始業前に組まれなくなります）">営業開始未入力</span>';
+              }
+              if (i === n - 1) {
+                bizNote += String(v.closing_time || '').trim()
+                  ? '<span style="display:block; font-size:10px; color:#047857; font-weight:700;" title="この工場の営業終了時間">〜' + esc(v.closing_time) + '営業</span>'
+                  : '<span style="display:block; font-size:10px; color:#d97706;" title="営業終了時間が未入力です（編集画面から入力すると終業に食い込む日程が防げます）">営業終了未入力</span>';
+              }
               tr.innerHTML = head +
-                '<td' + (v.overrun ? ' class="warn" title="時間超過"' : '') + '>' + travNote + esc(v.planned_start) + '</td>' +
+                '<td' + (v.overrun ? ' class="warn" title="時間超過"' : '') + '>' + travNote + esc(v.planned_start) + bizNote + '</td>' +
                 '<td>' + esc(fmtExpJs(v.expiry_date)) + '</td>' +
                 '<td>' + esc(v.management_no) + '</td>' +
                 '<td class="names">' + esc(v.office_name) +
