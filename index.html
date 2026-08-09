@@ -374,6 +374,21 @@
         '③ インターネットに接続できているか';
     }
 
+    // ★スケジュール作成の通信が失敗したら自動で再試行（最大3回・2026-08-09）:
+    //   1回目がGoogleの制限時間(6分)で打ち切られても、道路計算の結果はサーバ側に
+    //   保存されているため、2回目・3回目はどんどん速く終わり成功しやすい。
+    async function fetchGenerate(url, statusFn) {
+      for (var attempt = 1; ; attempt++) {
+        try {
+          return await fetch(url);
+        } catch (err) {
+          if (attempt >= 3) throw err;
+          statusFn('通信が途切れました（Googleの制限時間の可能性）。自動で' + (attempt + 1) + '回目を再試行します…（道路計算の保存分だけ速く終わります）');
+          await new Promise(function (r) { setTimeout(r, 5000); });
+        }
+      }
+    }
+
     async function load() {
       var base = apiUrl();
       if (!base) { setStatus('先にApps ScriptのURLを貼り付けてください', true); return; }
@@ -780,7 +795,7 @@
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(isoD(genStart)) + '&end=' + encodeURIComponent(e) +
           '&unscheduled_from=' + encodeURIComponent(viewIso) + '&token=' + encodeURIComponent(apiToken());
-        var res = await fetch(url);
+        var res = await fetchGenerate(url, genStatus);
         var data = await res.json();
         if (data.error) { genStatus('エラー: ' + data.error, true); return; }
         curMonthDays = (data.days || []).filter(function (d) { return d.date >= viewIso; });   // 助走分は表示しない
@@ -928,7 +943,7 @@
       sfLoadShow('ANNUAL PLAN');
       try {
         var url = base + '?action=annual&start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e) + '&token=' + encodeURIComponent(apiToken());
-        var res = await fetch(url);
+        var res = await fetchGenerate(url, annStatus);
         var data = await res.json();
         if (data.error) { annStatus('エラー: ' + data.error, true); return; }
         renderAnnual(data);
