@@ -691,7 +691,12 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
     function travJs(km) { return Math.ceil(km / (km <= GENJS.shortKm ? GENJS.spNear : GENJS.spFar) * 60); }
-    function hmJs(str) { var m = String(str || '').match(/^(\d{1,2}):?(\d{2})?/); return m ? Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0) : null; }
+    function hmJs(str) {
+      // 全角「９：３０」・「9時30分」形式も読む（読めないと営業時間が無視され始業前開始になるため）
+      var s = String(str || '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/：/g, ':').trim();
+      var m = s.match(/^(\d{1,2})[:時]?\s*(\d{2})?/);
+      return m ? Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0) : null;
+    }
     // 機器形態→標準滞在時間（Code.gsのSTAY_BY_EQUIPと同じ表）
     var STAYJS = { '': 70, 'CS': 80, 'BS': 100, '自動H': 80, 'CS,BS': 90, 'CS,自動H': 90, 'BS,自動H': 110, 'CS,BS,自動H': 110 };
     function stayFromEqJs(eq) {
