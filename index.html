@@ -24,7 +24,7 @@
     header h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .04em; position: relative; }
     header h1::before { content: "🗓 "; }
     header p { margin: 4px 0 0; font-size: 11px; color: #9db9e8; letter-spacing: .18em; position: relative; }
-    main { max-width: 1720px; margin: 0 auto; padding: 18px 16px 40px; }   /* 横スクロールせず表全体が見えるように広めに（2026-08-11） */
+    main { max-width: 1200px; margin: 0 auto; padding: 18px 16px 40px; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
     input, select, button { font-size: 14px; padding: 7px 12px; border: 1px solid #cdd6e6; border-radius: 9px; background: #fff; color: var(--ink);
       transition: border-color .15s, box-shadow .15s, transform .05s, background .15s, color .15s; }
@@ -742,7 +742,7 @@
               var head = (i === 0)
                 ? '<td rowspan="' + n + '">' + esc(md) + flexNote + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
                 : '';
-              var ctl = '<td class="col-ctl" style="white-space:normal; width:62px">' +
+              var ctl = '<td class="col-ctl" style="white-space:nowrap">' +
                 '<button type="button" class="editbtn mv" data-act="up" data-d="' + d._idx + '" data-v="' + i + '" title="上へ">↑</button> ' +
                 '<button type="button" class="editbtn mv" data-act="down" data-d="' + d._idx + '" data-v="' + i + '" title="下へ">↓</button> ' +
                 '<button type="button" class="editbtn mv" data-act="del" data-d="' + d._idx + '" data-v="' + i + '" title="この訪問を外す">✕</button> ' +
