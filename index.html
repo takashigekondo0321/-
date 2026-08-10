@@ -181,6 +181,8 @@
           <option value="checked">確認済みのみ</option>
         </select>
         <button id="reload" type="button">再読み込み</button>
+        <button id="expiryCsvBtn" type="button" title="毎月の満了日更新用。CSVから「管理番号」と「満了日」だけを読み取り、シートの満了日だけを書き換えます。定休日・希望条件・特記事項・確認状態など他の入力は一切消えません">満了日CSV取り込み</button>
+        <input id="expiryCsvFile" type="file" accept=".csv,text/csv,text/plain" hidden />
       </div>
       <div class="card">
         <table>
@@ -473,6 +475,119 @@
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;' }[c]; }); }
 
     document.getElementById('reload').addEventListener('click', load);
+
+    // ---- 満了日CSVの一括取り込み（2026-08-11 ユーザ指示）----
+    //   毎月もらう三重県全工場のCSVから「管理番号」と「満了日」だけを読み取り、
+    //   サーバ側で満了日列だけを書き換える。他の入力（定休日・希望条件・特記・確認状態…）は消えない。
+    document.getElementById('expiryCsvBtn').addEventListener('click', function () {
+      if (!apiUrl() || !apiToken()) { setStatus('先にURLと合言葉を設定してください', true); return; }
+      document.getElementById('expiryCsvFile').value = '';
+      document.getElementById('expiryCsvFile').click();
+    });
+    document.getElementById('expiryCsvFile').addEventListener('change', function () {
+      var file = this.files && this.files[0];
+      if (file) importExpiryCsv(file);
+    });
+    // CSVをテキストで読む。文字化け（Excelや業務システムのShift_JIS保存）なら自動で読み直す
+    function readCsvText(file, cb) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var t = String(fr.result || '');
+        if (t.indexOf('�') >= 0) {
+          var fr2 = new FileReader();
+          fr2.onload = function () { cb(String(fr2.result || '')); };
+          fr2.readAsText(file, 'shift_jis');
+        } else cb(t);
+      };
+      fr.readAsText(file, 'utf-8');
+    }
+    // CSVの1行分解（引用符・カンマ入りの値に対応）
+    function csvParseJs(text) {
+      var rows = [], row = [], cur = '', q = false;
+      for (var i = 0; i < text.length; i++) {
+        var ch = text[i];
+        if (q) {
+          if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+          else cur += ch;
+        }
+        else if (ch === '"') q = true;
+        else if (ch === ',') { row.push(cur); cur = ''; }
+        else if (ch === '\n') { row.push(cur.replace(/\r$/, '')); rows.push(row); row = []; cur = ''; }
+        else cur += ch;
+      }
+      if (cur !== '' || row.length) { row.push(cur.replace(/\r$/, '')); rows.push(row); }
+      return rows.filter(function (r) { return r.length > 1 || (r[0] && r[0].trim()); });
+    }
+    // 日付の表記ゆれを YYYY-MM-DD に統一（2027/8/1・2027-8-1・2027年8月1日・令和9年8月1日・R9/8/1）
+    function normDateJs(s) {
+      s = String(s == null ? '' : s).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+        .replace(/／/g, '/').replace(/[－ー]/g, '-').replace(/．/g, '.').trim();   // 全角の区切りにも対応
+      var m = s.match(/^(?:令和\s*(\d{1,2})|[RＲ]\s*(\d{1,2})|(\d{4}))\s*[年\/\-\.]\s*(\d{1,2})\s*[月\/\-\.]?\s*(\d{1,2})\s*日?/);
+      if (!m) return null;
+      var y = m[3] ? Number(m[3]) : 2018 + Number(m[1] || m[2]);   // 令和N年 = 2018+N
+      var mo = Number(m[4]), d = Number(m[5]);
+      if (y < 2000 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+      return y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2);
+    }
+    async function importExpiryCsv(file) {
+      readCsvText(file, async function (text) {
+        var rows = csvParseJs(text);
+        if (rows.length < 2) { setStatus('CSVが読めませんでした（データ行がありません）', true); return; }
+        // 見出し行から「管理番号」と「満了日」の列を自動で見つける（英語見出しのシートCSVにも対応）
+        var head = rows[0].map(function (h) { return String(h || '').replace(/^﻿/, '').trim(); });
+        var mgIdx = -1, exIdx = -1;
+        head.forEach(function (h, i) {
+          if (mgIdx < 0 && (h === 'management_no' || h.indexOf('管理') >= 0)) mgIdx = i;
+          if (exIdx < 0 && (h === 'expiry_date' || h.indexOf('満了') >= 0 || h.indexOf('期限') >= 0)) exIdx = i;
+        });
+        if (mgIdx < 0 || exIdx < 0) {
+          setStatus('CSVに「管理番号」と「満了日」の列が見つかりませんでした（1行目の見出しをご確認ください）', true);
+          return;
+        }
+        // 全行を読み取り（同じ管理番号が複数回出たら最後の行を採用）
+        var byMg = {}, order = [], badRows = 0;
+        for (var r = 1; r < rows.length; r++) {
+          var mg = String(rows[r][mgIdx] == null ? '' : rows[r][mgIdx]).trim();
+          if (!mg) continue;
+          var iso = normDateJs(rows[r][exIdx]);
+          if (!iso) { badRows++; continue; }
+          if (byMg[mg] == null) order.push(mg);
+          byMg[mg] = iso;
+        }
+        if (order.length === 0) { setStatus('CSVから読み取れた満了日が0件でした（日付の書式をご確認ください）', true); return; }
+        // 事前に差分を数えて確認ダイアログを出す（工場一覧が未読込なら先に読み込む）
+        if (!allFactories || allFactories.length === 0) await load();
+        var cur = {};
+        (allFactories || []).forEach(function (f) { cur[String(f.management_no)] = String(f.expiry_date || '').trim(); });
+        var willUpdate = 0, sameN = 0, notIn = [];
+        order.forEach(function (mg) {
+          if (cur[mg] === undefined) { notIn.push(mg); }
+          else if (cur[mg] === byMg[mg]) sameN++;
+          else willUpdate++;
+        });
+        var msg = 'CSVから ' + order.length + '件を読み取りました。\n\n' +
+          '・満了日が更新される工場: ' + willUpdate + '件\n' +
+          '・変更なし: ' + sameN + '件\n' +
+          (notIn.length ? '・シートに無い管理番号: ' + notIn.length + '件（更新されません。新しい工場は先にシートへ行を追加してください）\n' : '') +
+          (badRows ? '・日付が読めなかった行: ' + badRows + '行\n' : '') +
+          '\n満了日だけを書き換えます。他の情報（定休日・希望条件・特記事項・確認状態など）は変わりません。実行しますか？';
+        if (!window.confirm(msg)) { setStatus('満了日の取り込みを中止しました'); return; }
+        setStatus('満了日を更新しています…（' + order.length + '件）');
+        try {
+          var body = order.map(function (mg) { return mg + ',' + byMg[mg]; }).join('\n');
+          var res = await fetch(apiUrl() + '?action=expiryimport&token=' + encodeURIComponent(apiToken()), { method: 'POST', body: body });
+          var data = await res.json();
+          if (data.error) { setStatus('エラー: ' + data.error, true); return; }
+          var doneMsg = '✅ 満了日を更新しました: 更新 ' + data.updated + '件 / 変更なし ' + data.unchanged + '件' +
+            (data.notfound && data.notfound.length ? ' / シートに無い番号 ' + data.notfound.length + '件（' + data.notfound.slice(0, 20).join(', ') + (data.notfound.length > 20 ? ' …' : '') + '）' : '');
+          setStatus(doneMsg);
+          await load();   // 一覧を最新にする
+          document.getElementById('count').textContent = doneMsg;
+        } catch (e2) {
+          setStatus(await fetchFailMsg(apiUrl(), e2), true);
+        }
+      });
+    }
     searchInput.addEventListener('input', render);
     districtSelect.addEventListener('change', render);
     checkFilterSelect.addEventListener('change', render);
