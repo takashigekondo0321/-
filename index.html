@@ -766,8 +766,8 @@
         if (vFrom !== null && vFrom > 0 && start < vFrom) start = vFrom;
         // 「15時以降」指定: 15:00より前には開始しない（手直しでも維持）
         if ((String(v.time_pref || '').split(/[,、;・\s]+/).indexOf('15時以降') >= 0 || String(v.notes || '').indexOf('15時以降') >= 0) && start < 900) start = 900;
-        // 「昼一」指定: 13:00より前には開始しない（手直しでも維持）
-        if ((String(v.time_pref || '').split(/[,、;・\s]+/).indexOf('昼一') >= 0 || String(v.notes || '').indexOf('昼一') >= 0) && start < 780) { start = 780; lunch = true; }
+        // 「昼一」指定: 13:00より前には開始しない（手直しでも維持）。※「昼一にしない」指定は対象外
+        if ((String(v.time_pref || '').split(/[,、;・\s]+/).indexOf('昼一') >= 0 || (String(v.notes || '').indexOf('昼一') >= 0 && String(v.notes || '').indexOf('昼一にしな') < 0)) && start < 780) { start = 780; lunch = true; }
         if (start >= 720 && start < 780) { start = 780; lunch = true; }   // 12時台は開始しない（13:00ちょうどはOK）
         var stay = Number(v.stay_min) || 70;
         var end = start + stay;
@@ -1146,6 +1146,7 @@
       var TP_OPTS = [
         ['午前', '午前'], ['午後', '午後'], ['朝一', '朝一(必ず1件目)'], ['昼一', '昼一(13:00開始)'], ['15時以降', '15時以降'],
         ['1件目不可', '1件目にしない'], ['2件目不可', '2件目にしない'], ['3件目不可', '3件目にしない'], ['4件目不可', '4件目にしない'], ['5件目不可', '5件目にしない'],
+        ['昼一不可', '昼一にしない(13:00開始を避ける)'],
         ['月末不可', '月末にしない(25日以降を避ける)'],
         ['月曜祝日火曜休', '月曜が祝日の週は火曜も休み']
       ];
