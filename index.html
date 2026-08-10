@@ -66,10 +66,6 @@
     .sched td.col-note { font-size: 11px; color: #475569; white-space: normal; min-width: 80px; max-width: 130px; line-height: 1.5; }
     tr.teamrow td { background: linear-gradient(90deg, #e3edff, #eef4ff); font-weight: 700; color: #1e40af; border-left: 4px solid #2563eb; }
     tr.daystart td { border-top: 2px solid #b6c4da; }
-    /* ミニ順路図（1日ごとの点と線の回り順・2026-08-11） */
-    td.col-minimap { vertical-align: top; }
-    canvas.minimap { border: 1px solid #93c5fd; border-radius: 8px; cursor: pointer; display: block; }
-    table.sched.nominimap .col-minimap, table.sched.nominimap th.col-minimap { display: none; }
     #editOverlay { position: fixed; inset: 0; background: rgba(8,14,30,.5); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
     #editOverlay[hidden] { display: none; }
     /* 順路図・月間マップ（地図モーダル） */
@@ -206,16 +202,15 @@
         <label class="fld">対象月<select id="genMonth"></select></label>
         <button id="genBtn" type="button">1か月分の日程を作成</button>
         <button id="pdfBtn" type="button" class="tab" title="印刷画面が開きます。送信先を「PDFに保存」にするとPDFファイルとして保存できます">PDF出力</button>
-        <button id="minimapBtn" type="button" class="tab" title="日ごとのミニ順路図（点と線の回り順）の表示・非表示を切り替えます">ミニ図 表示中</button>
         <button id="monthMapBtn" type="button" class="tab" title="1か月の全訪問を週ごとの色分けで地図に表示します">月間マップ</button>
       </div>
       <p class="muted" id="genInfo" style="margin-top:0"></p>
       <div class="card">
         <table class="sched">
           <thead>
-            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>定休日</th><th>特記事項</th><th>地区</th><th class="col-ctl">操作</th><th class="col-map">経路</th><th class="col-minimap">順路</th></tr>
+            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>定休日</th><th>特記事項</th><th>地区</th><th class="col-ctl">操作</th><th class="col-map">経路</th></tr>
           </thead>
-          <tbody id="genRows"><tr><td colspan="12" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
+          <tbody id="genRows"><tr><td colspan="11" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -693,7 +688,7 @@
     // ↑↓で順番入替・✕で削除・＋で工場追加ができ、時刻はその場で再計算される。
     function renderMonthDetail(days, rowsTarget) {
       if (days.length === 0) {
-        rowsTarget.innerHTML = '<tr><td colspan="12" class="status">この期間に組める工場がありませんでした</td></tr>';
+        rowsTarget.innerHTML = '<tr><td colspan="11" class="status">この期間に組める工場がありませんでした</td></tr>';
         return;
       }
       rowsTarget.innerHTML = '';
@@ -709,7 +704,7 @@
       weeks.forEach(function (wk) {
         var gr = document.createElement('tr');
         gr.className = 'group';
-        gr.innerHTML = '<td colspan="12">📅 ' + esc(wk) + '</td>';
+        gr.innerHTML = '<td colspan="11">📅 ' + esc(wk) + '</td>';
         rowsTarget.appendChild(gr);
 
         // 週の中を班ごとにまとめる（A班→B班→…）
@@ -724,7 +719,7 @@
         teams.forEach(function (t) {
           var tr0 = document.createElement('tr');
           tr0.className = 'teamrow';
-          tr0.innerHTML = '<td colspan="12">' + esc((TEAM_CHARS.charAt(t - 1) || t) + '班') + '</td>';
+          tr0.innerHTML = '<td colspan="11">' + esc((TEAM_CHARS.charAt(t - 1) || t) + '班') + '</td>';
           rowsTarget.appendChild(tr0);
 
           tMap[t].sort(function (a, b) { return a.date < b.date ? -1 : 1; });
@@ -757,10 +752,6 @@
                   '<br><button type="button" class="editbtn mv" data-act="rmap" data-d="' + d._idx + '" title="訪問順の番号（1件目〜）つき経路図を開く">順路図</button>' +
                   '<br><button type="button" class="editbtn mv" data-act="add" data-d="' + d._idx + '" title="この日に工場を追加">＋追加</button></td>'
                 : '';
-              // ★ミニ順路図（案A・2026-08-11ユーザ指示）: 日ごとの右横に「点と線」の回り順を常時表示
-              var miniCell = (i === 0)
-                ? '<td class="col-minimap" rowspan="' + n + '"><canvas class="minimap" width="170" height="140" data-d="' + d._idx + '" title="この日の回り順（クリックで道路地図つきの順路図を開く）"></canvas></td>'
-                : '';
               var travNote = (i > 0 && Number(v.travel_minutes) >= 11)
                 ? '<span style="display:block; font-size:10px; color:#b45309; font-weight:700;" title="前の工場からの移動時間">↓移動' + esc(v.travel_minutes) + '分</span>'
                 : '';
@@ -789,103 +780,17 @@
                   : '') + '</td>' +
                 '<td class="col-closed">' + esc(v.closed_days || '') + '</td>' +
                 '<td class="col-note">' + (v.conds ? '<b style="color:#1d4ed8">【' + esc(v.conds) + '】</b> ' : '') + esc(v.notes || '') + '</td>' +
-                '<td>' + esc(v.district) + '</td>' + ctl + mapCell + miniCell;
+                '<td>' + esc(v.district) + '</td>' + ctl + mapCell;
               rowsTarget.appendChild(tr);
             });
           });
         });
       });
-      // 全行を置いたあとで、各日のミニ順路図を描く（クリックで大きな順路図）
-      rowsTarget.querySelectorAll('canvas.minimap').forEach(function (cv) {
-        var dd = days[Number(cv.getAttribute('data-d'))];
-        if (!dd) return;
-        drawMiniRoute(cv, dd);
-        cv.addEventListener('click', function () { openRouteMap(dd); });
-      });
-    }
-
-    // ---- ミニ順路図の描画（点と線の簡易図・通信なし）----
-    //   赤丸＝訪問順（1→2→…） / 緑■＝出発地点（支所・宿） / 青線＝移動の向き。
-    //   出発地点が遠すぎる日（名古屋→熊野など）は訪問先だけを描く（図がつぶれないように）。
-    function drawMiniRoute(cv, d) {
-      var ctx = cv.getContext('2d');
-      var W = cv.width, H = cv.height;
-      ctx.fillStyle = '#f0f9ff'; ctx.fillRect(0, 0, W, H);
-      ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 1;
-      for (var gx = 22; gx < W; gx += 30) { ctx.beginPath(); ctx.moveTo(gx, 3); ctx.lineTo(gx, H - 3); ctx.stroke(); }
-      for (var gy = 22; gy < H; gy += 30) { ctx.beginPath(); ctx.moveTo(3, gy); ctx.lineTo(W - 3, gy); ctx.stroke(); }
-      var vs = (d.visits || []).filter(function (v) { return v.lat != null && !isNaN(Number(v.lat)); });
-      if (vs.length === 0) return;
-      // 出発地点: 宿泊2日目・宿替えは「宿」、日帰り・宿泊初日は「支所」。直行は現地集合なので出発点なし
-      var trip0 = (d.visits[0] && d.visits[0].trip) || '';
-      var org = null, orgLabel = '';
-      if (trip0 !== '直行') {
-        var op = dayOriginPoint(d).split(',');
-        var oLat = Number(op[0]), oLng = Number(op[1]);
-        if (!isNaN(oLat)) {
-          // 訪問先の中心からおよそ25km以内のときだけ出発点を図に入れる（遠い支所を入れると図がつぶれる）
-          var cLat = 0, cLng = 0;
-          vs.forEach(function (v) { cLat += Number(v.lat); cLng += Number(v.lng); });
-          cLat /= vs.length; cLng /= vs.length;
-          var dKm = Math.sqrt(Math.pow((oLat - cLat) * 111, 2) + Math.pow((oLng - cLng) * 91, 2));
-          if (dKm <= 25) {
-            org = { lat: oLat, lng: oLng };
-            orgLabel = (trip0 === '宿泊2日目' || trip0 === '宿替え') ? '宿' : '支所';
-          }
-        }
-      }
-      // 座標→画面座標（縦横比を保つ。経度は緯度に合わせて縮める）
-      var pts = vs.map(function (v) { return { lat: Number(v.lat), lng: Number(v.lng) }; });
-      var all = org ? [org].concat(pts) : pts;
-      var kx = Math.cos(34.7 * Math.PI / 180);   // 三重県付近の経度補正
-      var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      all.forEach(function (p) {
-        var x = p.lng * kx, y = p.lat;
-        if (x < minX) minX = x; if (x > maxX) maxX = x;
-        if (y < minY) minY = y; if (y > maxY) maxY = y;
-      });
-      var spanX = Math.max(maxX - minX, 0.008), spanY = Math.max(maxY - minY, 0.008);
-      var pad = 20;
-      var scale = Math.min((W - pad * 2) / spanX, (H - pad * 2) / spanY);
-      var offX = (W - spanX * scale) / 2, offY = (H - spanY * scale) / 2;
-      function px(p) { return offX + (p.lng * kx - minX) * scale; }
-      function py(p) { return H - (offY + (p.lat - minY) * scale); }   // 北が上
-      // 経路線と矢印
-      var path = (org ? [org] : []).concat(pts);
-      ctx.strokeStyle = '#3b82f6'; ctx.fillStyle = '#3b82f6'; ctx.lineWidth = 2.5;
-      for (var s2 = 0; s2 < path.length - 1; s2++) {
-        var x1 = px(path[s2]), y1 = py(path[s2]), x2 = px(path[s2 + 1]), y2 = py(path[s2 + 1]);
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-        var ang = Math.atan2(y2 - y1, x2 - x1), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-        ctx.beginPath();
-        ctx.moveTo(mx, my);
-        ctx.lineTo(mx - 8 * Math.cos(ang - 0.45), my - 8 * Math.sin(ang - 0.45));
-        ctx.lineTo(mx - 8 * Math.cos(ang + 0.45), my - 8 * Math.sin(ang + 0.45));
-        ctx.closePath(); ctx.fill();
-      }
-      // 出発点（緑の角丸四角）
-      if (org) {
-        var ox = px(org), oy = py(org);
-        ctx.fillStyle = '#16a34a';
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(ox - 13, oy - 10, 26, 20, 5); ctx.fill(); }
-        else ctx.fillRect(ox - 13, oy - 10, 26, 20);
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(orgLabel, ox, oy + 0.5);
-      }
-      // 訪問先（赤丸＋順番）
-      for (var p2 = 0; p2 < pts.length; p2++) {
-        var cx2 = px(pts[p2]), cy2 = py(pts[p2]);
-        ctx.beginPath(); ctx.arc(cx2, cy2, 10, 0, Math.PI * 2);
-        ctx.fillStyle = '#dc2626'; ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(String(p2 + 1), cx2, cy2 + 0.5);
-      }
     }
 
     // ---- スケジュール作成（1か月分・週区切り・経路リンク付き）----
     function genStatus(msg, isErr) {
-      genRowsEl.innerHTML = '<tr><td colspan="12" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
+      genRowsEl.innerHTML = '<tr><td colspan="11" class="status ' + (isErr ? 'err' : '') + '">' + esc(msg) + '</td></tr>';
       genInfoEl.textContent = '';
     }
 
@@ -1091,12 +996,6 @@
       window.print();
     });
 
-    // ミニ順路図の表示/非表示切り替え（表だけ見たいとき用）
-    document.getElementById('minimapBtn').addEventListener('click', function () {
-      var tbl = document.querySelector('#panel-gen table.sched');
-      tbl.classList.toggle('nominimap');
-      this.textContent = tbl.classList.contains('nominimap') ? 'ミニ図 非表示' : 'ミニ図 表示中';
-    });
 
     // ---- 月間日程の手直し（↑↓入替・✕削除・＋追加）----
     var curMonthDays = null;
