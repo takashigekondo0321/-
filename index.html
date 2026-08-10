@@ -60,8 +60,9 @@
     .editbtn:hover { background: #eaf2ff; filter: none; box-shadow: none; }
     td.names { white-space: normal; min-width: 320px; line-height: 1.7; }
     /* スケジュール表: 列が多いので余白を詰めて1画面に収める */
-    .sched th, .sched td { padding: 8px 7px; }
-    td.names { white-space: normal; min-width: 170px; max-width: 260px; line-height: 1.45; }   /* 事業所名は折り返して表を横に伸ばさない */
+    .sched th, .sched td { padding: 4px 7px; }   /* 日程表は縦の余白を詰めて1画面に多くの行を出す（2026-08-11） */
+    td.names { white-space: normal; min-width: 170px; max-width: 260px; line-height: 1.45; }   /* 工場一覧: 事業所名は折り返して編集ボタンまで画面内に収める */
+    .sched td.names { white-space: nowrap; min-width: 230px; max-width: none; }               /* 日程表: 折り返さない（行の高さを一定に保つ・従来どおり） */
     .sched td.col-closed { font-size: 11px; color: #b91c1c; white-space: nowrap; }
     .sched td.col-note { font-size: 11px; color: #475569; white-space: normal; min-width: 80px; max-width: 130px; line-height: 1.5; }
     tr.teamrow td { background: linear-gradient(90deg, #e3edff, #eef4ff); font-weight: 700; color: #1e40af; border-left: 4px solid #2563eb; }
