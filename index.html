@@ -209,7 +209,7 @@
       <div class="card">
         <table class="sched">
           <thead>
-            <tr><th>校正日</th><th>曜</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>定休日</th><th>特記事項</th><th>地区</th><th class="col-ctl">操作</th><th class="col-map">経路</th></tr>
+            <tr><th>校正日</th><th>曜</th><th class="col-ctl">操作</th><th class="col-map">経路</th><th>時間</th><th>満了日</th><th>管理番号</th><th>事業所名</th><th>定休日</th><th>特記事項</th><th>地区</th></tr>
           </thead>
           <tbody id="genRows"><tr><td colspan="11" class="status">対象月を選んで「1か月分の日程を作成」を押してください</td></tr></tbody>
         </table>
@@ -768,7 +768,7 @@
                   ? '<span style="display:block; font-size:10px; color:#047857; font-weight:700;" title="この工場の営業終了時間">〜' + esc(v.closing_time) + '営業</span>'
                   : '<span style="display:block; font-size:10px; color:#d97706;" title="営業終了時間が未入力です（編集画面から入力すると終業に食い込む日程が防げます）">営業終了未入力</span>';
               }
-              tr.innerHTML = head +
+              tr.innerHTML = head + ctl + mapCell +
                 '<td' + (v.overrun ? ' class="warn" title="時間超過"' : '') + '>' + travNote + esc(v.planned_start) + bizNote + '</td>' +
                 '<td>' + esc(fmtExpJs(v.expiry_date)) + '</td>' +
                 '<td>' + esc(v.management_no) + '</td>' +
@@ -781,7 +781,7 @@
                   : '') + '</td>' +
                 '<td class="col-closed">' + esc(v.closed_days || '') + '</td>' +
                 '<td class="col-note">' + (v.conds ? '<b style="color:#1d4ed8">【' + esc(v.conds) + '】</b> ' : '') + esc(v.notes || '') + '</td>' +
-                '<td>' + esc(v.district) + '</td>' + ctl + mapCell;
+                '<td>' + esc(v.district) + '</td>';
               rowsTarget.appendChild(tr);
             });
           });
