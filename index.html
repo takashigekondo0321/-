@@ -60,15 +60,19 @@
     .editbtn:hover { background: #eaf2ff; filter: none; box-shadow: none; }
     td.names { white-space: normal; min-width: 320px; line-height: 1.7; }
     /* スケジュール表: 列が多いので余白を詰めて1画面に収める */
-    .sched th, .sched td { padding: 4px 7px; }   /* 日程表は縦の余白を詰めて1画面に多くの行を出す（2026-08-11） */
+    /* ★日程表は横スクロールなしで全列が見えるように圧縮（2026-08-11ユーザ指示）:
+       文字を1段小さく・余白を詰め・長い事業所名と地区名だけ折り返す */
+    .sched { font-size: 12px; }
+    .sched th, .sched td { padding: 4px 5px; }
+    .sched td.col-dist { white-space: normal; max-width: 78px; font-size: 11px; line-height: 1.35; }
     /* 横スクロールしても「校正日」列と週・班見出しが見えるように左に固定（2026-08-11） */
     .sched td.col-date { position: sticky; left: 0; background: #fff; z-index: 2; box-shadow: 2px 0 5px -2px rgba(15,23,42,.25); }
     .sched thead th:first-child { position: sticky; left: 0; z-index: 3; background: #f4f7fb; box-shadow: 2px 0 5px -2px rgba(15,23,42,.25); }
     tr.group .stick, tr.teamrow .stick { position: sticky; left: 12px; display: inline-block; }
     td.names { white-space: normal; min-width: 170px; max-width: 260px; line-height: 1.45; }   /* 工場一覧: 事業所名は折り返して編集ボタンまで画面内に収める */
-    .sched td.names { white-space: nowrap; min-width: 230px; max-width: none; }               /* 日程表: 折り返さない（行の高さを一定に保つ・従来どおり） */
+    .sched td.names { white-space: normal; min-width: 150px; max-width: 200px; line-height: 1.4; }   /* 日程表: 長い名前だけ2行に折り返し（横幅を一定に保つ） */
     .sched td.col-closed { font-size: 11px; color: #b91c1c; white-space: nowrap; }
-    .sched td.col-note { font-size: 11px; color: #475569; white-space: normal; min-width: 80px; max-width: 130px; line-height: 1.5; }
+    .sched td.col-note { font-size: 11px; color: #475569; white-space: normal; min-width: 70px; max-width: 108px; line-height: 1.4; }
     tr.teamrow td { background: linear-gradient(90deg, #e3edff, #eef4ff); font-weight: 700; color: #1e40af; border-left: 4px solid #2563eb; }
     tr.daystart td { border-top: 2px solid #b6c4da; }
     #editOverlay { position: fixed; inset: 0; background: rgba(8,14,30,.5); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
@@ -747,7 +751,7 @@
               var head = (i === 0)
                 ? '<td rowspan="' + n + '" class="col-date">' + esc(md) + flexNote + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
                 : '';
-              var ctl = '<td class="col-ctl" style="white-space:nowrap">' +
+              var ctl = '<td class="col-ctl" style="white-space:normal; width:58px">' +
                 '<button type="button" class="editbtn mv" data-act="up" data-d="' + d._idx + '" data-v="' + i + '" title="上へ">↑</button> ' +
                 '<button type="button" class="editbtn mv" data-act="down" data-d="' + d._idx + '" data-v="' + i + '" title="下へ">↓</button> ' +
                 '<button type="button" class="editbtn mv" data-act="del" data-d="' + d._idx + '" data-v="' + i + '" title="この訪問を外す">✕</button> ' +
@@ -785,7 +789,7 @@
                   : '') + '</td>' +
                 '<td class="col-closed">' + esc(v.closed_days || '') + '</td>' +
                 '<td class="col-note">' + (v.conds ? '<b style="color:#1d4ed8">【' + esc(v.conds) + '】</b> ' : '') + esc(v.notes || '') + '</td>' +
-                '<td>' + esc(v.district) + '</td>';
+                '<td class="col-dist">' + esc(v.district) + '</td>';
               rowsTarget.appendChild(tr);
             });
           });
@@ -881,8 +885,9 @@
     function fmtJs(mins) { var h = Math.floor(mins / 60), m2 = mins % 60; return (h < 10 ? '0' : '') + h + ':' + (m2 < 10 ? '0' : '') + m2; }
     // 満了日を西暦入り「YYYY/M/D」で表示（例: 2026-08-09 → 2026/8/9）
     function fmtExpJs(s) {
+      // 表を横に伸ばさないため「12/28」形式で表示（年は校正日から自明）
       var m = String(s || '').match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
-      return m ? (m[1] + '/' + Number(m[2]) + '/' + Number(m[3])) : String(s || '');
+      return m ? (Number(m[2]) + '/' + Number(m[3])) : String(s || '');
     }
     function retimeDay(d) {
       var oLat = (d.origin_lat != null ? Number(d.origin_lat) : GENJS.branchLat);
