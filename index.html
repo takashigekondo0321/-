@@ -244,21 +244,10 @@
           <label class="ef">終業<input id="ef_closing_time" placeholder="例: 17:30" /></label>
           <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" placeholder="空欄=機器形態から自動" title="空欄にすると機器形態から自動計算します（一般70/CS80/自動H80/BS100/CS+BS90/CS+BS+自動H110）" /></label>
           <label class="ef">避ける日（この日は訪問しない）<input id="ef_avoid_date" type="date" title="点検・棚卸し・行事などで「この日だけは来ないでほしい」日を1日指定できます。日程はその日を避けて組まれます" /></label>
-          <label class="ef">時間帯・順番の希望
-            <select id="ef_time_pref">
-              <option value="">指定なし</option>
-              <option value="午前">午前（前半に配置）</option>
-              <option value="午後">午後（後半に配置）</option>
-              <option value="朝一">朝一（必ず1件目）</option>
-              <option value="1件目不可">1件目にしない</option>
-              <option value="2件目不可">2件目にしない</option>
-              <option value="3件目不可">3件目にしない</option>
-              <option value="4件目不可">4件目にしない</option>
-              <option value="5件目不可">5件目にしない</option>
-              <option value="月末不可">月末にしない（25日以降を避ける）</option>
-              <option value="昼一">昼一（昼休み明けの1件目・13:00開始）</option>
-              <option value="15時以降">15時以降（15:00より前に開始しない）</option>
-            </select></label>
+          <div class="ef">時間帯・順番の希望（複数選択可）
+            <div id="tpBox" style="margin-top:4px; line-height:2;"></div>
+            <input type="hidden" id="ef_time_pref" />
+          </div>
           <div class="ef">訪問時期の希望
             <div style="display:flex; gap:6px;">
               <select id="pp_month" style="flex:1"><option value="">指定なし</option></select>
@@ -770,9 +759,9 @@
         var vFrom = v.visit_from ? hmJs(v.visit_from) : null;   // 訪問可能時間より前には開始しない
         if (vFrom !== null && vFrom > 0 && start < vFrom) start = vFrom;
         // 「15時以降」指定: 15:00より前には開始しない（手直しでも維持）
-        if ((v.time_pref === '15時以降' || String(v.notes || '').indexOf('15時以降') >= 0) && start < 900) start = 900;
+        if ((String(v.time_pref || '').split(/[,、;・\s]+/).indexOf('15時以降') >= 0 || String(v.notes || '').indexOf('15時以降') >= 0) && start < 900) start = 900;
         // 「昼一」指定: 13:00より前には開始しない（手直しでも維持）
-        if ((v.time_pref === '昼一' || String(v.notes || '').indexOf('昼一') >= 0) && start < 780) { start = 780; lunch = true; }
+        if ((String(v.time_pref || '').split(/[,、;・\s]+/).indexOf('昼一') >= 0 || String(v.notes || '').indexOf('昼一') >= 0) && start < 780) { start = 780; lunch = true; }
         if (start >= 720 && start < 780) { start = 780; lunch = true; }   // 12時台は開始しない（13:00ちょうどはOK）
         var stay = Number(v.stay_min) || 70;
         var end = start + stay;
@@ -1141,6 +1130,26 @@
           box.appendChild(lb);
         });
       });
+      // 時間帯・順番の希望: 複数選択のチェックボックス（保存値はカンマ区切り。例: 午前,月末不可）
+      var TP_OPTS = [
+        ['午前', '午前'], ['午後', '午後'], ['朝一', '朝一(必ず1件目)'], ['昼一', '昼一(13:00開始)'], ['15時以降', '15時以降'],
+        ['1件目不可', '1件目にしない'], ['2件目不可', '2件目にしない'], ['3件目不可', '3件目にしない'], ['4件目不可', '4件目にしない'], ['5件目不可', '5件目にしない'],
+        ['月末不可', '月末にしない(25日以降を避ける)']
+      ];
+      var tpBox = document.getElementById('tpBox');
+      TP_OPTS.forEach(function (opt) {
+        var lb = document.createElement('label');
+        lb.style.cssText = 'display:inline-flex; align-items:center; gap:3px; margin-right:12px; font-size:13px; color:#334155;';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = opt[0]; cb.style.width = 'auto';
+        cb.addEventListener('change', function () {
+          var sel = [];
+          tpBox.querySelectorAll('input').forEach(function (c) { if (c.checked) sel.push(c.value); });
+          document.getElementById('ef_time_pref').value = sel.join(',');
+        });
+        lb.appendChild(cb); lb.appendChild(document.createTextNode(opt[1]));
+        tpBox.appendChild(lb);
+      });
       var pm = document.getElementById('pp_month');
       for (var m = 1; m <= 12; m++) { var op = document.createElement('option'); op.value = m + '月'; op.textContent = m + '月'; pm.appendChild(op); }
       function syncPp() {
@@ -1157,6 +1166,9 @@
         var v = document.getElementById(p[1]).value || '';
         document.getElementById(p[0]).querySelectorAll('input').forEach(function (cb) { cb.checked = v.indexOf(cb.value) >= 0; });
       });
+      // 時間帯・順番の希望チェックの復元（カンマ区切りを分解して完全一致で照合）
+      var vtp = (document.getElementById('ef_time_pref').value || '').split(/[,、;・\s]+/);
+      document.getElementById('tpBox').querySelectorAll('input').forEach(function (cb) { cb.checked = vtp.indexOf(cb.value) >= 0; });
       var v2 = document.getElementById('ef_period_pref').value || '';
       var mm = v2.match(/(\d{1,2})月/);
       document.getElementById('pp_month').value = mm ? (mm[1] + '月') : '';
