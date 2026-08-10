@@ -106,6 +106,12 @@
     .egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .ef { display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 3px; }
     .ef input { font-size: 14px; }
+    /* 事業所名は全幅・大きめ表示（長い名前が切れて見にくいため） */
+    .ef-wide { grid-column: 1 / -1; }
+    .ef-wide input { font-size: 17px; font-weight: 700; color: #0f172a; padding: 7px 9px; }
+    /* タイトルに管理番号＋事業所名を大きく表示 */
+    #editTitle { font-size: 18px; line-height: 1.4; margin: 0 0 12px; color: #0f172a; }
+    #editTitle .mgno { display: inline-block; background: #1d4ed8; color: #fff; border-radius: 6px; padding: 1px 8px; font-size: 14px; margin-right: 8px; vertical-align: 2px; }
     .erow { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     @media (max-width: 520px) { .egrid { grid-template-columns: 1fr; } }
 
@@ -224,8 +230,8 @@
       <div id="editCard">
         <h3 id="editTitle">工場を編集</h3>
         <div class="egrid">
+          <label class="ef ef-wide">事業所名<input id="ef_office_name" /></label>
           <label class="ef">管理番号<input id="ef_mgmt" disabled /></label>
-          <label class="ef">事業所名<input id="ef_office_name" /></label>
           <label class="ef">満了日<input id="ef_expiry_date" type="date" /></label>
           <label class="ef">定休日<input id="ef_closed_days" placeholder="例: 火,水,第2月" title="毎週の定休は曜日1文字（火,水）、第N曜の休みは「第2火」のように書きます。カンマ区切りで混在OK（例: 水,第2火,第4火）" /></label>
           <label class="ef">機器形態<input id="ef_equipment_type" placeholder="例: CS,BS" /></label>
@@ -1182,6 +1188,9 @@
       }
       if (!f) return;
       editingMgmt = String(mgmt);
+      // タイトルに管理番号＋事業所名を大きく表示（どの工場を編集中か一目で分かるように）
+      document.getElementById('editTitle').innerHTML =
+        '<span class="mgno">' + esc(String(f.management_no || '')) + '</span>' + esc(String(f.office_name || '工場を編集'));
       document.getElementById('ef_mgmt').value = f.management_no || '';
       for (var k = 0; k < EDIT_FIELDS.length; k++) {
         var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
