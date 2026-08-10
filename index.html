@@ -246,8 +246,13 @@
               <option value="09:50">09:50</option>
               <option value="10:00">10:00</option>
             </select></label>
-          <label class="ef">始業<input id="ef_opening_time" placeholder="例: 09:00" /></label>
-          <label class="ef">終業<input id="ef_closing_time" placeholder="例: 17:30" /></label>
+          <div class="ef">営業時間（始業 〜 終業）
+            <div style="display:flex; align-items:center; gap:6px;">
+              <input id="ef_opening_time" placeholder="始業 例: 09:00" style="flex:1; min-width:0;" />
+              <span style="color:#64748b;">〜</span>
+              <input id="ef_closing_time" placeholder="終業 例: 17:30" style="flex:1; min-width:0;" />
+            </div>
+          </div>
           <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" placeholder="空欄=機器形態から自動" title="空欄にすると機器形態から自動計算します（一般70/CS80/自動H80/BS100/CS+BS90/CS+BS+自動H110）" /></label>
           <label class="ef">避ける日（この日は訪問しない）<input id="ef_avoid_date" type="date" title="点検・棚卸し・行事などで「この日だけは来ないでほしい」日を1日指定できます。日程はその日を避けて組まれます" /></label>
           <div class="ef">時間帯・順番の希望（複数選択可）
