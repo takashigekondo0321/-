@@ -501,29 +501,59 @@
       }
       rowsTarget.innerHTML = '';
       var TEAM_CHARS = 'ABCDE';   // 1→A班, 2→B班 ...
-      var lastWeek = null;
+      // 週ごとにまとめる（出現順を保持）
+      var weeks = [], wkMap = {};
       days.forEach(function (d) {
         var wk = weekRangeLabel(d.date);
-        if (wk !== lastWeek) {
-          lastWeek = wk;
-          var gr = document.createElement('tr');
-          gr.className = 'group';
-          gr.innerHTML = '<td colspan="' + cols + '">📅 ' + esc(wk) + '</td>';
-          rowsTarget.appendChild(gr);
-        }
-        var teamLabel = (TEAM_CHARS.charAt((d.team || 1) - 1) || d.team) + '班';
-        var md = d.date.slice(5).replace('-', '/');   // 07-08 → 07/08
-        var mapCell = '';
-        if (withMap) {
-          var mUrl = mapsRouteUrl(d.visits, dayOriginPoint(d));
-          mapCell = '<td>' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') + '</td>';
-        }
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td>' + esc(md) + '</td><td>' + esc(d.weekday) + '</td><td>' + esc(teamLabel) + '</td>' +
-          '<td>' + esc(d.district) + '</td><td>' + d.count + '</td>' + mapCell +
-          '<td class="names">' + esc(d.visits.map(function (v) { return v.office_name; }).join('、')) + '</td>';
-        rowsTarget.appendChild(tr);
+        if (!wkMap[wk]) { wkMap[wk] = []; weeks.push(wk); }
+        wkMap[wk].push(d);
+      });
+      weeks.forEach(function (wk) {
+        var list = wkMap[wk];
+        var wkTotal = 0;
+        list.forEach(function (d) { wkTotal += d.count; });
+        var gr = document.createElement('tr');
+        gr.className = 'group';
+        gr.innerHTML = '<td colspan="' + cols + '">📅 ' + esc(wk) + '　合計 ' + wkTotal + '件</td>';
+        rowsTarget.appendChild(gr);
+
+        // ★週の中を班ごとに分けて表示（ユーザ指示 2026-08-11: 日付順の混在は読みにくい）
+        //   A班の月〜金 → B班の月〜金 → … の順。班見出しに日数・件数・回る地区を要約
+        var teams = [], tMap = {};
+        list.forEach(function (d) {
+          var t = d.team || 1;
+          if (!tMap[t]) { tMap[t] = []; teams.push(t); }
+          tMap[t].push(d);
+        });
+        teams.sort(function (a, b) { return a - b; });
+        teams.forEach(function (t) {
+          var tDays = tMap[t].slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+          var tTotal = 0, distList = [], distSeen = {};
+          tDays.forEach(function (d) {
+            tTotal += d.count;
+            if (!distSeen[d.district]) { distSeen[d.district] = true; distList.push(d.district); }
+          });
+          var tr0 = document.createElement('tr');
+          tr0.className = 'teamrow';
+          tr0.innerHTML = '<td colspan="' + cols + '">' +
+            esc((TEAM_CHARS.charAt(t - 1) || t) + '班　' + tDays.length + '日・' + tTotal + '件　' + distList.join('・')) + '</td>';
+          rowsTarget.appendChild(tr0);
+          tDays.forEach(function (d) {
+            var teamLabel = (TEAM_CHARS.charAt((d.team || 1) - 1) || d.team) + '班';
+            var md = d.date.slice(5).replace('-', '/');   // 07-08 → 07/08
+            var mapCell = '';
+            if (withMap) {
+              var mUrl = mapsRouteUrl(d.visits, dayOriginPoint(d));
+              mapCell = '<td>' + (mUrl ? '<a href="' + mUrl + '" target="_blank" rel="noopener">地図</a>' : '-') + '</td>';
+            }
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+              '<td>' + esc(md) + '</td><td>' + esc(d.weekday) + '</td><td>' + esc(teamLabel) + '</td>' +
+              '<td>' + esc(d.district) + '</td><td>' + d.count + '</td>' + mapCell +
+              '<td class="names">' + esc(d.visits.map(function (v) { return v.office_name; }).join('、')) + '</td>';
+            rowsTarget.appendChild(tr);
+          });
+        });
       });
     }
 
