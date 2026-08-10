@@ -1096,7 +1096,13 @@
     }
     document.getElementById('monthMapBtn').addEventListener('click', openMonthMap);
 
-    document.getElementById('mapClose').addEventListener('click', function () { mapOverlay.hidden = true; });
+    document.getElementById('mapClose').addEventListener('click', function () {
+      mapOverlay.hidden = true;
+      // 地図の部品（ズームボタン・ピン）を完全に破棄する。デザインファイル(leaflet.css)が
+      // 広告ブロック等で読めなかった場合、部品が画面の隅に素のまま漏れて残ることがあるため
+      if (routeMapObj) { try { routeMapObj.remove(); } catch (e) {} routeMapObj = null; }
+      document.getElementById('routeMap').innerHTML = '';
+    });
     mapOverlay.addEventListener('click', function (ev) { if (ev.target === mapOverlay) mapOverlay.hidden = true; });
 
     // ---- 工場の編集 ----
