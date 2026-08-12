@@ -768,7 +768,7 @@
                 ? '<td rowspan="' + n + '" class="col-date">' + esc(md) + flexNote + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
                 : '';
               var ctl = '<td class="col-ctl" style="white-space:normal; width:74px">' +
-                '<span class="draghandle" title="ここをつかんで並べ替え（別の日へも移動できます）">≡</span>' +
+                '<span class="draghandle" draggable="true" title="ここをつかんで並べ替え（別の日へも移動できます）">≡</span>' +
                 '<button type="button" class="editbtn mv" data-act="up" data-d="' + d._idx + '" data-v="' + i + '" title="上へ">↑</button> ' +
                 '<button type="button" class="editbtn mv" data-act="down" data-d="' + d._idx + '" data-v="' + i + '" title="下へ">↓</button> ' +
                 '<button type="button" class="editbtn mv" data-act="del" data-d="' + d._idx + '" data-v="' + i + '" title="この訪問を外す">✕</button> ' +
@@ -1110,20 +1110,14 @@
     // ---- ドラッグ&ドロップ並べ替え（2026-08-12）----
     //   行の「≡」をつかんで、同じ日の中でも別の日へも移動できる。青い線=落とす位置。
     //   落とすとその日（別の日なら両方の日）の時刻を自動で再計算する。
+    //   ※行(tr)ごとドラッグすると、1件目の行だけ失敗する（左端固定=stickyの校正日セルを含む行は
+    //     ブラウザがドラッグ開始できないことがある）ため、≡マーク自体をドラッグする方式にしている。
     var dragSrc = null;
-    genRowsEl.addEventListener('mousedown', function (ev) {
-      var h = ev.target;
-      if (h && h.classList && h.classList.contains('draghandle')) {
-        var tr = h.closest('tr');
-        if (tr && tr.getAttribute('data-d') != null) tr.draggable = true;   // ≡からだけドラッグ開始できる
-      }
-    });
-    genRowsEl.addEventListener('mouseup', function () {
-      genRowsEl.querySelectorAll('tr[draggable="true"]').forEach(function (tr) { tr.draggable = false; });
-    });
     genRowsEl.addEventListener('dragstart', function (ev) {
-      var tr = ev.target && ev.target.closest ? ev.target.closest('tr') : null;
-      if (!tr || !tr.draggable || tr.getAttribute('data-d') == null || !curMonthDays) { ev.preventDefault(); return; }
+      var h = ev.target;
+      if (!h || !h.classList || !h.classList.contains('draghandle')) return;   // ≡以外からは開始しない
+      var tr = h.closest('tr');
+      if (!tr || tr.getAttribute('data-d') == null || !curMonthDays) { ev.preventDefault(); return; }
       dragSrc = { d: Number(tr.getAttribute('data-d')), v: Number(tr.getAttribute('data-v')) };
       tr.classList.add('dragging');
       ev.dataTransfer.effectAllowed = 'move';
