@@ -75,6 +75,13 @@
     .sched td.col-note { font-size: 11px; color: #475569; white-space: normal; min-width: 70px; max-width: 108px; line-height: 1.4; }
     tr.teamrow td { background: linear-gradient(90deg, #e3edff, #eef4ff); font-weight: 700; color: #1e40af; border-left: 4px solid #2563eb; }
     tr.daystart td { border-top: 2px solid #b6c4da; }
+    /* ドラッグ&ドロップ並べ替え（2026-08-12）: ≡をつかんで行を移動。青い線=落とす位置 */
+    .draghandle { cursor: grab; color: #94a3b8; font-weight: 700; padding: 0 3px; user-select: none; -webkit-user-select: none; font-size: 15px; }
+    .draghandle:hover { color: #2563eb; }
+    tr.dragging td { opacity: .35; }
+    tr.drop-above td { border-top: 3px solid #2563eb !important; }
+    tr.drop-below td { border-bottom: 3px solid #2563eb !important; }
+    @media print { .draghandle { display: none !important; } }
     #editOverlay { position: fixed; inset: 0; background: rgba(8,14,30,.5); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow: auto; z-index: 50; }
     #editOverlay[hidden] { display: none; }
     /* 順路図・月間マップ（地図モーダル） */
@@ -217,8 +224,10 @@
         <button id="genBtn" type="button">1か月分の日程を作成</button>
         <button id="pdfBtn" type="button" class="tab" title="印刷画面が開きます。送信先を「PDFに保存」にするとPDFファイルとして保存できます">PDF出力</button>
         <button id="monthMapBtn" type="button" class="tab" title="1か月の全訪問を週ごとの色分けで地図に表示します">月間マップ</button>
+        <button id="undoBtn" type="button" class="tab" disabled title="並べ替え・削除・追加を1つ前の状態に戻します（10回前まで）">元に戻す</button>
       </div>
       <p class="muted" id="genInfo" style="margin-top:0"></p>
+      <p id="moveWarn" style="display:none; color:#b91c1c; font-weight:700; font-size:13px; margin:4px 0 0;"></p>
       <div class="card">
         <table class="sched">
           <thead>
@@ -753,10 +762,13 @@
             d.visits.forEach(function (v, i) {
               var tr = document.createElement('tr');
               if (i === 0) tr.className = 'daystart';
+              tr.setAttribute('data-d', d._idx);   // ドラッグ&ドロップ用（この行がどの日の何件目か）
+              tr.setAttribute('data-v', i);
               var head = (i === 0)
                 ? '<td rowspan="' + n + '" class="col-date">' + esc(md) + flexNote + '</td><td rowspan="' + n + '">' + esc(d.weekday) + '</td>'
                 : '';
-              var ctl = '<td class="col-ctl" style="white-space:normal; width:58px">' +
+              var ctl = '<td class="col-ctl" style="white-space:normal; width:74px">' +
+                '<span class="draghandle" title="ここをつかんで並べ替え（別の日へも移動できます）">≡</span>' +
                 '<button type="button" class="editbtn mv" data-act="up" data-d="' + d._idx + '" data-v="' + i + '" title="上へ">↑</button> ' +
                 '<button type="button" class="editbtn mv" data-act="down" data-d="' + d._idx + '" data-v="' + i + '" title="下へ">↓</button> ' +
                 '<button type="button" class="editbtn mv" data-act="del" data-d="' + d._idx + '" data-v="' + i + '" title="この訪問を外す">✕</button> ' +
@@ -990,6 +1002,7 @@
         var data = await res.json();
         if (data.error) { genStatus('エラー: ' + data.error, true); return; }
         curMonthDays = (data.days || []).filter(function (d) { return d.date >= viewIso; });   // 助走分は表示しない
+        undoStack = []; refreshUndoBtn(); showMoveWarn('');   // 作り直したら履歴と注意をリセット
         var shownVisits = 0;
         curMonthDays.forEach(function (d) { shownVisits += d.count; });
         genInfoEl.textContent = viewIso + ' 〜 ' + e + '：のべ出動 ' + curMonthDays.length + '班・日 ／ 総訪問 ' + shownVisits + '件' +
@@ -1032,12 +1045,15 @@
         return;
       }
       if (act === 'up' && vi > 0) {
+        pushUndo();
         var a = d.visits[vi - 1]; d.visits[vi - 1] = d.visits[vi]; d.visits[vi] = a;
       } else if (act === 'down' && vi >= 0 && vi < d.visits.length - 1) {
+        pushUndo();
         var b2 = d.visits[vi + 1]; d.visits[vi + 1] = d.visits[vi]; d.visits[vi] = b2;
       } else if (act === 'del') {
         var name = d.visits[vi] ? d.visits[vi].office_name : '';
-        if (!confirm(d.date + ' から「' + name + '」を外しますか？\n（この画面上だけの変更です。作り直すと元に戻ります）')) return;
+        if (!confirm(d.date + ' から「' + name + '」を外しますか？\n（この画面上だけの変更です。「元に戻す」ボタンで取り消せます）')) return;
+        pushUndo();
         d.visits.splice(vi, 1);
       } else if (act === 'add') {
         var m = prompt('この日（' + d.date + '）に追加する工場の管理番号を入力してください');
@@ -1049,6 +1065,7 @@
         }
         if (!f) { alert('管理番号 ' + m + ' が見つかりません（工場一覧を先に読み込んでください）'); return; }
         if (!f.lat || !f.lng) { alert('この工場は緯度経度が未設定のため追加できません（編集画面の「座標取得」で取得してください）'); return; }
+        pushUndo();
         d.visits.push({
           management_no: f.management_no, office_name: f.office_name, district: f.district,
           address: f.address, lat: Number(f.lat), lng: Number(f.lng),
@@ -1063,6 +1080,125 @@
       retimeDay(d);
       renderMonthDetail(curMonthDays, genRowsEl);
     });
+
+    // ---- 元に戻す（2026-08-12）: 並べ替え・削除・追加・ドラッグ移動を10回前まで取り消せる ----
+    var undoStack = [];
+    function pushUndo() {
+      if (!curMonthDays) return;
+      undoStack.push(JSON.stringify(curMonthDays));
+      if (undoStack.length > 10) undoStack.shift();
+      refreshUndoBtn();
+    }
+    function refreshUndoBtn() {
+      var b = document.getElementById('undoBtn');
+      b.disabled = undoStack.length === 0;
+      b.textContent = undoStack.length ? '元に戻す(' + undoStack.length + ')' : '元に戻す';
+    }
+    document.getElementById('undoBtn').addEventListener('click', function () {
+      if (!undoStack.length || !curMonthDays) return;
+      curMonthDays = JSON.parse(undoStack.pop());
+      refreshUndoBtn();
+      showMoveWarn('');
+      renderMonthDetail(curMonthDays, genRowsEl);
+    });
+    function showMoveWarn(msg) {
+      var el = document.getElementById('moveWarn');
+      el.textContent = msg || '';
+      el.style.display = msg ? '' : 'none';
+    }
+
+    // ---- ドラッグ&ドロップ並べ替え（2026-08-12）----
+    //   行の「≡」をつかんで、同じ日の中でも別の日へも移動できる。青い線=落とす位置。
+    //   落とすとその日（別の日なら両方の日）の時刻を自動で再計算する。
+    var dragSrc = null;
+    genRowsEl.addEventListener('mousedown', function (ev) {
+      var h = ev.target;
+      if (h && h.classList && h.classList.contains('draghandle')) {
+        var tr = h.closest('tr');
+        if (tr && tr.getAttribute('data-d') != null) tr.draggable = true;   // ≡からだけドラッグ開始できる
+      }
+    });
+    genRowsEl.addEventListener('mouseup', function () {
+      genRowsEl.querySelectorAll('tr[draggable="true"]').forEach(function (tr) { tr.draggable = false; });
+    });
+    genRowsEl.addEventListener('dragstart', function (ev) {
+      var tr = ev.target && ev.target.closest ? ev.target.closest('tr') : null;
+      if (!tr || !tr.draggable || tr.getAttribute('data-d') == null || !curMonthDays) { ev.preventDefault(); return; }
+      dragSrc = { d: Number(tr.getAttribute('data-d')), v: Number(tr.getAttribute('data-v')) };
+      tr.classList.add('dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer.setData('text/plain', 'move'); } catch (e) { /* 古いブラウザ用 */ }
+    });
+    function clearDropMarks() {
+      genRowsEl.querySelectorAll('.drop-above, .drop-below').forEach(function (el) {
+        el.classList.remove('drop-above'); el.classList.remove('drop-below');
+      });
+    }
+    genRowsEl.addEventListener('dragover', function (ev) {
+      if (!dragSrc) return;
+      var tr = ev.target && ev.target.closest ? ev.target.closest('tr') : null;
+      if (!tr || tr.getAttribute('data-d') == null) { clearDropMarks(); return; }
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      var rect = tr.getBoundingClientRect();
+      var below = (ev.clientY - rect.top) > rect.height / 2;
+      clearDropMarks();
+      tr.classList.add(below ? 'drop-below' : 'drop-above');
+    });
+    genRowsEl.addEventListener('drop', function (ev) {
+      if (!dragSrc) return;
+      var tr = ev.target && ev.target.closest ? ev.target.closest('tr') : null;
+      if (!tr || tr.getAttribute('data-d') == null) return;
+      ev.preventDefault();
+      var rect = tr.getBoundingClientRect();
+      var below = (ev.clientY - rect.top) > rect.height / 2;
+      var tdi = Number(tr.getAttribute('data-d'));
+      var insertAt = Number(tr.getAttribute('data-v')) + (below ? 1 : 0);
+      moveVisitByDrag(dragSrc.d, dragSrc.v, tdi, insertAt);
+    });
+    genRowsEl.addEventListener('dragend', function () {
+      clearDropMarks();
+      genRowsEl.querySelectorAll('tr.dragging').forEach(function (tr) { tr.classList.remove('dragging'); tr.draggable = false; });
+      dragSrc = null;
+    });
+    function moveVisitByDrag(sd, sv, tdi, insertAt) {
+      var day1 = curMonthDays[sd], day2 = curMonthDays[tdi];
+      if (!day1 || !day2 || !day1.visits[sv]) return;
+      if (sd === tdi && (insertAt === sv || insertAt === sv + 1)) return;   // 同じ位置に落とした＝変更なし
+      pushUndo();
+      var v = day1.visits.splice(sv, 1)[0];
+      if (sd === tdi && insertAt > sv) insertAt--;
+      day2.visits.splice(insertAt, 0, v);
+      day1.count = day1.visits.length;
+      day2.count = day2.visits.length;
+      retimeDay(day1);
+      if (day2 !== day1) retimeDay(day2);
+      // 別の日へ移した場合: 移動先が定休日に当たっていないかを確認して注意を出す
+      var warn = '';
+      if (day2 !== day1) {
+        var w = moveWarnFor(v, day2.date);
+        if (w) warn = '⚠ ' + v.management_no + ' ' + String(v.office_name || '') + ': ' + w + '（「元に戻す」で取り消せます）';
+      }
+      showMoveWarn(warn);
+      renderMonthDetail(curMonthDays, genRowsEl);
+    }
+    // 移動先の日が定休日・第N曜休みに当たるかの簡易チェック（表示用の注意。移動自体は止めない）
+    function moveWarnFor(v, dateIso) {
+      var p = dateIso.split('-');
+      var dt = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+      var wd = '日月火水木金土'.charAt(dt.getDay());
+      var cd = String(v.closed_days || '');
+      if (!cd) return '';
+      var nth = Math.floor((dt.getDate() - 1) / 7) + 1;
+      var parts = cd.split(/[,、;・･\/\s]+/);
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i] === wd) return '移動先（' + dateIso.slice(5).replace('-', '/') + ' ' + wd + '曜）はこの工場の定休日です';
+        var t = String(parts[i]).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/^第/, '');
+        var m = t.match(/^(\d)(.)$/);
+        if (m && m[2] === wd && Number(m[1]) === nth) return '移動先は第' + m[1] + wd + '曜（この工場の定休日）です';
+      }
+      return '';
+    }
     // 対象月プルダウン: 今月から12か月分（初期値=今月）
     (function () {
       var t = new Date();
