@@ -126,6 +126,10 @@
     .ef-wide { grid-column: 1 / -1; }
     /* 編集画面のセクション見出し（基本情報・営業時間… の区切り） */
     .esec { grid-column: 1 / -1; font-size: 13px; font-weight: 700; color: #1e40af; border-bottom: 2px solid #dbeafe; padding-bottom: 4px; margin-top: 10px; }
+    /* 新規工場の追加時だけ出す欄（住所・地区）と、管理番号入力の強調 */
+    .newonly { display: none !important; }
+    #editCard.newmode .newonly { display: flex !important; }
+    #editCard.newmode #ef_mgmt { background: #fffbeb; border: 2px solid #f59e0b; border-radius: 6px; }
     .ef-wide input { font-size: 17px; font-weight: 700; color: #0f172a; padding: 7px 9px; }
     /* タイトルに管理番号＋事業所名を大きく表示 */
     #editTitle { font-size: 18px; line-height: 1.4; margin: 0 0 12px; color: #0f172a; }
@@ -205,6 +209,7 @@
         </select>
         <button id="reload" type="button">再読み込み</button>
         <button id="expiryCsvBtn" type="button" title="毎月の満了日更新用。CSVから「管理番号」と「満了日」だけを読み取り、シートの満了日だけを書き換えます。定休日・希望条件・特記事項・確認状態など他の入力は一切消えません">満了日CSV取り込み</button>
+        <button id="addFactoryBtn" type="button" title="新しい工場をシートに追加します（管理番号・事業所名・住所・地区を入力。座標は住所から自動取得）">＋新規工場</button>
         <input id="expiryCsvFile" type="file" accept=".csv,text/csv,text/plain" hidden />
       </div>
       <div class="card">
@@ -262,6 +267,9 @@
           <label class="ef ef-wide">事業所名<input id="ef_office_name" /></label>
           <label class="ef">管理番号<input id="ef_mgmt" disabled /></label>
           <label class="ef">満了日<input id="ef_expiry_date" type="date" /></label>
+          <!-- 新規工場の追加時だけ表示（座標取得と地区分けに必要） -->
+          <label class="ef ef-wide newonly">住所<input id="ef_address" placeholder="例: 三重県四日市市〇〇町1-2-3" /></label>
+          <label class="ef newonly">地区（市町村名）<input id="ef_district" placeholder="例: 四日市市" /></label>
           <label class="ef">機器形態<input id="ef_equipment_type" placeholder="例: CS,BS" /></label>
           <label class="ef">滞在時間(分)<input id="ef_stay_duration_min" type="number" placeholder="空欄=機器形態から自動" title="空欄にすると機器形態から自動計算します（一般70/CS80/自動H80/BS100/CS+BS90/CS+BS+自動H110）" /></label>
 
@@ -1498,6 +1506,9 @@
         if (String(allFactories[i].management_no) === String(mgmt)) { f = allFactories[i]; break; }
       }
       if (!f) return;
+      editIsNew = false;   // 通常の編集モード（新規用の住所・地区欄は隠す）
+      document.getElementById('editCard').classList.remove('newmode');
+      document.getElementById('ef_mgmt').disabled = true;
       editingMgmt = String(mgmt);
       // タイトルに管理番号＋事業所名を大きく表示（どの工場を編集中か一目で分かるように）
       document.getElementById('editTitle').innerHTML =
@@ -1519,9 +1530,87 @@
       editMsg.textContent = '';
       editOverlay.hidden = false;
     }
-    function closeEdit() { editOverlay.hidden = true; editingMgmt = null; }
+    function closeEdit() {
+      editOverlay.hidden = true; editingMgmt = null;
+      editIsNew = false;
+      document.getElementById('editCard').classList.remove('newmode');
+      document.getElementById('ef_mgmt').disabled = true;
+    }
+
+    // ---- 新規工場の追加（2026-08-12）: 編集画面を「新規モード」で開き、保存でシート末尾に1行追加 ----
+    var editIsNew = false;
+    document.getElementById('addFactoryBtn').addEventListener('click', function () {
+      if (!apiUrl() || !apiToken()) { setStatus('先にURLと合言葉を設定してください', true); return; }
+      if (!allFactories || allFactories.length === 0) { setStatus('先に「再読み込み」で工場一覧を読み込んでください', true); return; }
+      editIsNew = true;
+      editingMgmt = null;
+      document.getElementById('editCard').classList.add('newmode');
+      document.getElementById('editTitle').textContent = '＋ 新規工場の追加';
+      var mgEl = document.getElementById('ef_mgmt');
+      mgEl.value = ''; mgEl.disabled = false;
+      document.getElementById('ef_address').value = '';
+      document.getElementById('ef_district').value = '';
+      for (var k = 0; k < EDIT_FIELDS.length; k++) {
+        var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
+        if (el) el.value = '';
+      }
+      condWidgetsFromValues();   // チェック・セレクト類を空の状態に
+      document.getElementById('ef_checked').checked = false;
+      document.getElementById('ef_checkedDate').textContent = '';
+      document.getElementById('ef_coords').textContent = '座標: 保存すると住所から自動で取得します';
+      editMsg.textContent = '';
+      editOverlay.hidden = false;
+      mgEl.focus();
+    });
+    async function saveNewFactory() {
+      var base = apiUrl();
+      if (!base || !apiToken()) { editMsg.textContent = 'URLと合言葉が必要です（上部で設定）'; return; }
+      var mgmt = document.getElementById('ef_mgmt').value.trim();
+      var name = document.getElementById('ef_office_name').value.trim();
+      var addr = document.getElementById('ef_address').value.trim();
+      var dist = document.getElementById('ef_district').value.trim();
+      if (!/^\d+$/.test(mgmt)) { editMsg.textContent = '⚠ 管理番号を半角数字で入力してください'; return; }
+      if (!name) { editMsg.textContent = '⚠ 事業所名を入力してください'; return; }
+      if (!addr) { editMsg.textContent = '⚠ 住所を入力してください（座標の取得に必要です）'; return; }
+      if (!dist) { editMsg.textContent = '⚠ 地区（市町村名）を入力してください'; return; }
+      for (var i = 0; i < allFactories.length; i++) {
+        if (String(allFactories[i].management_no) === mgmt) { editMsg.textContent = '⚠ 管理番号 ' + mgmt + ' は既に存在します（' + allFactories[i].office_name + '）'; return; }
+      }
+      editMsg.textContent = '追加中...';
+      var url = base + '?action=addfactory&token=' + encodeURIComponent(apiToken()) + '&mgmt=' + encodeURIComponent(mgmt) +
+        '&address=' + encodeURIComponent(addr) + '&district=' + encodeURIComponent(dist);
+      for (var k = 0; k < EDIT_FIELDS.length; k++) {
+        var el = document.getElementById('ef_' + EDIT_FIELDS[k]);
+        var v = el ? el.value : '';
+        if (v !== '') url += '&' + EDIT_FIELDS[k] + '=' + encodeURIComponent(v);
+      }
+      url += '&_=' + (new Date().getTime());
+      try {
+        var res = await fetch(url);
+        var data = await res.json();
+        if (data.error) { editMsg.textContent = 'エラー: ' + data.error; return; }
+        // 続けて住所→座標の自動取得（失敗しても追加自体は完了している）
+        editMsg.textContent = '追加しました。住所から座標を取得しています…';
+        var geoOk = false;
+        try {
+          var res2 = await fetch(base + '?action=geocode&token=' + encodeURIComponent(apiToken()) + '&mgmt=' + encodeURIComponent(mgmt) + '&_=' + (new Date().getTime()));
+          var g = await res2.json();
+          geoOk = !!(g && g.ok);
+          if (g && g.error) alert('工場は追加されましたが、座標の取得に失敗しました:\n' + g.error + '\n\n住所を確認してから、この工場の編集画面の「座標取得」でやり直してください（座標が無いと日程に組まれません）');
+        } catch (eG) {
+          alert('工場は追加されましたが、座標の取得に失敗しました。あとで編集画面の「座標取得」を押してください');
+        }
+        closeEdit();
+        await load();   // 一覧を読み直して新しい工場を表示
+        document.getElementById('count').textContent =
+          '✅ 新規工場 ' + mgmt + '「' + name + '」を追加しました' + (geoOk ? '（座標取得済み）' : '（⚠ 座標未取得: 編集画面の「座標取得」を実行してください）');
+      } catch (e) {
+        editMsg.textContent = '通信に失敗しました: ' + e;
+      }
+    }
 
     async function saveEdit() {
+      if (editIsNew) { saveNewFactory(); return; }
       if (!editingMgmt) return;
       var base = apiUrl();
       if (!base || !apiToken()) { editMsg.textContent = 'URLと合言葉が必要です（上部で設定）'; return; }
