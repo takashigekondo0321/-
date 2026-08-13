@@ -211,7 +211,12 @@
         <button id="expiryCsvBtn" type="button" title="毎月の満了日更新用。CSVから「管理番号」と「満了日」だけを読み取り、シートの満了日だけを書き換えます。定休日・希望条件・特記事項・確認状態など他の入力は一切消えません">満了日CSV取り込み</button>
         <button id="addFactoryBtn" type="button" title="新しい工場をシートに追加します（管理番号・事業所名・住所・地区を入力。座標は住所から自動取得）">＋新規工場</button>
         <input id="expiryCsvFile" type="file" accept=".csv,text/csv,text/plain" hidden />
+        <button id="healthBtn" type="button" title="データの総点検: 満了日の空欄・座標なし・条件の矛盾・営業時間の未入力・シート類の状態などをまとめて診断します">🩺 健康診断</button>
       </div>
+      <p id="healthFilterBar" hidden style="background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; padding:8px 12px; font-size:13px; color:#92400e; margin:0 0 10px;">
+        🩺 診断の絞り込み表示中: <b id="healthFilterLabel"></b>
+        <button id="healthFilterClear" type="button" class="tab" style="margin-left:10px">解除して全件表示</button>
+      </p>
       <div class="card">
         <table>
           <thead>
@@ -333,6 +338,20 @@
           <button type="button" id="editCancel" class="tab">キャンセル</button>
           <button type="button" id="editSave">保存</button>
         </div>
+      </div>
+    </div>
+
+    <!-- データ健康診断の結果パネル（2026-08-13） -->
+    <div id="healthOverlay" hidden style="position:fixed; inset:0; background:rgba(8,14,30,.5); backdrop-filter:blur(3px); display:flex; align-items:flex-start; justify-content:center; padding:20px; overflow:auto; z-index:55;">
+      <div style="background:#fff; border-radius:16px; padding:20px 24px; max-width:760px; width:100%; box-shadow:0 24px 60px -12px rgba(2,6,23,.5);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #eef2f8; padding-bottom:10px; margin-bottom:12px;">
+          <b style="font-size:16px;">🩺 データ健康診断の結果</b>
+          <span>
+            <span id="healthTime" style="font-size:12px; color:#64748b; margin-right:12px;"></span>
+            <button type="button" id="healthClose" class="tab">閉じる</button>
+          </span>
+        </div>
+        <div id="healthBody" style="font-size:13.5px; line-height:1.7;">診断中…</div>
       </div>
     </div>
 
@@ -470,6 +489,7 @@
       var d = districtSelect.value;
       var cf = checkFilterSelect.value;   // '' | unchecked | checked
       var list = allFactories.filter(function (f) {
+        if (healthFilter && !healthFilter.set[String(f.management_no)]) return false;   // 🩺診断からの絞り込み
         if (d && (f.district || '(地区不明)') !== d) return false;
         if (cf === 'unchecked' && isChecked(f)) return false;
         if (cf === 'checked' && !isChecked(f)) return false;
@@ -634,6 +654,145 @@
     searchInput.addEventListener('input', render);
     districtSelect.addEventListener('change', render);
     checkFilterSelect.addEventListener('change', render);
+
+    // ---- 🩺 データ健康診断（2026-08-13）----
+    //   これまで人手（Claude）で行っていたデータ点検をボタン1つに。
+    //   工場データのチェックは画面側で即時に、シート類・バックアップの状態はサーバ(healthcheck)で確認する。
+    var healthFilter = null;    // {label, set:{mg:true}} 診断結果からの絞り込み表示
+    var healthCats = {};        // 「一覧を見る」用のカテゴリ別工場リスト
+    function isBringInJs(f) {
+      var sh = String(f.set_host == null ? '' : f.set_host).trim();
+      if (sh && /^\d+$/.test(sh)) return false;
+      if (/(\d+)\s*へ\s*持ち込み/.test(String(f.notes || ''))) return false;
+      return String(f.calibration_style || '').indexOf('持ち込み') >= 0 || String(f.notes || '').indexOf('持ち込み') >= 0;
+    }
+    function tpHasJs(f, token) {
+      var tp = String(f.time_pref || '');
+      if (!tp) return false;
+      return tp.split(/[,、;・･\/\s]+/).indexOf(token) >= 0;
+    }
+    document.getElementById('healthBtn').addEventListener('click', runHealthCheck);
+    document.getElementById('healthClose').addEventListener('click', function () { document.getElementById('healthOverlay').hidden = true; });
+    document.getElementById('healthOverlay').addEventListener('click', function (ev) { if (ev.target === this) this.hidden = true; });
+    document.getElementById('healthFilterClear').addEventListener('click', function () {
+      healthFilter = null;
+      document.getElementById('healthFilterBar').hidden = true;
+      render();
+    });
+    // 「一覧を見る」→ 該当工場だけに絞り込んで工場一覧を表示
+    document.getElementById('healthBody').addEventListener('click', function (ev) {
+      var b = ev.target;
+      if (!b || !b.classList || !b.classList.contains('hview')) return;
+      var cat = healthCats[b.getAttribute('data-k')];
+      if (!cat) return;
+      var set = {};
+      cat.items.forEach(function (i) { set[i.mg] = true; });
+      healthFilter = { label: cat.label + '（' + cat.items.length + '件)', set: set };
+      document.getElementById('healthFilterLabel').textContent = cat.label + '（' + cat.items.length + '件）';
+      document.getElementById('healthFilterBar').hidden = false;
+      document.getElementById('healthOverlay').hidden = true;
+      searchInput.value = ''; districtSelect.value = ''; checkFilterSelect.value = '';
+      switchTab('list');
+      render();
+    });
+    async function runHealthCheck() {
+      if (!apiUrl() || !apiToken()) { setStatus('先にURLと合言葉を設定してください', true); return; }
+      if (!allFactories || allFactories.length === 0) await load();
+      if (!allFactories || allFactories.length === 0) return;
+      var ov = document.getElementById('healthOverlay');
+      var body = document.getElementById('healthBody');
+      ov.hidden = false;
+      body.innerHTML = '診断中…';
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      var mgSet = {};
+      allFactories.forEach(function (f) { mgSet[String(f.management_no)] = true; });
+      // ---- 工場データのチェック（持ち込み工場は訪問しないので満了日・座標等の対象外） ----
+      var expEmpty = [], expired = [], coordNone = [], contra = [], refBroken = [];
+      var openEmpty = [], closeEmpty = [], unchecked = [];
+      allFactories.forEach(function (f) {
+        var mg = String(f.management_no), nm = String(f.office_name || '');
+        var bring = isBringInJs(f);
+        var expStr = String(f.expiry_date || '').trim();
+        var m = expStr.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+        if (!bring) {
+          if (!m) expEmpty.push({ mg: mg, x: nm });
+          else if (new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() < today.getTime()) {
+            expired.push({ mg: mg, x: nm + '（満了 ' + expStr + '）' });
+          }
+          if (f.lat == null || String(f.lat) === '' || isNaN(Number(f.lat))) coordNone.push({ mg: mg, x: nm });
+          if (!String(f.opening_time || '').trim()) openEmpty.push({ mg: mg, x: nm });
+          if (!String(f.closing_time || '').trim()) closeEmpty.push({ mg: mg, x: nm });
+        }
+        if (!String(f.checked_date || '').trim()) unchecked.push({ mg: mg, x: nm });
+        var dp = String(f.day_pref || '').trim(), dn = String(f.day_ng || '').trim();
+        if (dp && dn) {
+          for (var ci = 0; ci < dp.length; ci++) {
+            if ('月火水木金'.indexOf(dp[ci]) >= 0 && dn.indexOf(dp[ci]) >= 0) { contra.push({ mg: mg, x: nm + '：曜日の希望と不可の両方に「' + dp[ci] + '」' }); break; }
+          }
+        }
+        if (tpHasJs(f, '朝一') && tpHasJs(f, '1件目不可')) contra.push({ mg: mg, x: nm + '：朝一と1件目にしないを両方選択' });
+        if (tpHasJs(f, '昼一') && tpHasJs(f, '昼一不可')) contra.push({ mg: mg, x: nm + '：昼一と昼一にしないを両方選択' });
+        if (tpHasJs(f, '午前') && tpHasJs(f, '15時以降')) contra.push({ mg: mg, x: nm + '：午前と15時以降を両方選択' });
+        [['set_host', 'セット校正'], ['same_day', '同日校正']].forEach(function (pair) {
+          var v = String(f[pair[0]] == null ? '' : f[pair[0]]).trim();
+          if (v && /^\d+$/.test(v) && !mgSet[v]) refBroken.push({ mg: mg, x: nm + '：' + pair[1] + 'の相手「' + v + '」が見つかりません' });
+        });
+      });
+      // ---- シート類・バックアップの状態（サーバ） ----
+      var sv = null;
+      try {
+        var r = await fetch(apiUrl() + '?action=healthcheck&token=' + encodeURIComponent(apiToken()) + '&_=' + (new Date().getTime()));
+        sv = await r.json();
+      } catch (e) { sv = null; }
+      // ---- 結果の組み立て ----
+      healthCats = {};
+      var greens = [];
+      function catRow(key, label, hint, items) {
+        if (!items.length) { greens.push(label + ': 問題なし'); return ''; }
+        healthCats[key] = { label: label, items: items };
+        var ex = items.slice(0, 3).map(function (i) { return i.mg + ' ' + String(i.x).slice(0, 22); }).join(' ／ ') + (items.length > 3 ? ' …' : '');
+        return '<div style="margin:2px 0 10px;">・' + esc(label) + ': <b style="color:#b91c1c">' + items.length + '件</b> ' +
+          '<button type="button" class="tab hview" data-k="' + key + '">一覧を見る</button>' +
+          '<div style="font-size:12px; color:#64748b;">' + esc(ex) + '</div>' +
+          (hint ? '<div style="font-size:12px; color:#92400e;">→ ' + esc(hint) + '</div>' : '') + '</div>';
+      }
+      function head(bg, col, text) { return '<div style="background:' + bg + '; color:' + col + '; font-weight:700; border-radius:8px; padding:6px 12px; margin:12px 0 8px;">' + text + '</div>'; }
+      var html = '';
+      var redRows = catRow('expEmpty', '満了日が空欄・読めない工場', '日程に一切登場せず期限切れに気づけません。編集画面から入力を', expEmpty) +
+        catRow('expired', '満了日が過去の工場（期限切れの疑い）', '最新の満了日CSVを取り込んだか確認を', expired) +
+        catRow('coordNone', '座標が未取得の工場', '日程に組まれません。編集画面の「座標取得」を実行', coordNone) +
+        catRow('contra', '希望条件が矛盾している工場', '編集画面でどちらかを外してください', contra) +
+        catRow('refBroken', 'セット・同日校正の相手が存在しない工場', '相手の管理番号を確認してください', refBroken);
+      var svRed = '';
+      if (sv) {
+        ['plan', 'holidays', 'routes', 'backup'].forEach(function (k) {
+          if (sv[k] && !sv[k].ok) svRed += '<div style="margin:2px 0 10px;">・⚠ ' + esc(sv[k].msg) + '</div>';
+        });
+      } else {
+        svRed += '<div style="margin:2px 0 10px;">・⚠ シート類の状態確認に失敗しました（healthcheck未デプロイの可能性）</div>';
+      }
+      html += head('#fef2f2', '#b91c1c', '🔴 すぐ直した方がよいもの');
+      html += (redRows + svRed) || '<div style="color:#16a34a; margin:4px 0 10px;">なし 🎉</div>';
+      if (!(redRows + svRed)) html += '';
+      var yellowRows = catRow('openEmpty', '営業開始時間が未入力', '朝9時に組まれます（実際は開店前かも）。分かる範囲で入力を', openEmpty) +
+        catRow('closeEmpty', '営業終了時間が未入力', '終業に食い込む日程を防ぐため入力推奨', closeEmpty) +
+        catRow('unchecked', '入力確認（✅）がまだの工場', '', unchecked);
+      html += head('#fffbeb', '#92400e', '🟡 早めに埋めたいもの');
+      html += yellowRows || '<div style="color:#16a34a; margin:4px 0 10px;">なし 🎉</div>';
+      html += head('#f0fdf4', '#15803d', '🟢 問題なし');
+      var greenHtml = '';
+      greens.forEach(function (g) { greenHtml += '<div style="margin:2px 0;">✅ ' + esc(g) + '</div>'; });
+      if (sv) {
+        ['plan', 'holidays', 'routes', 'backup'].forEach(function (k) {
+          if (sv[k] && sv[k].ok) greenHtml += '<div style="margin:2px 0;">✅ ' + esc(sv[k].msg) + '</div>';
+        });
+      }
+      html += greenHtml || '<div style="color:#64748b;">（なし）</div>';
+      body.innerHTML = html;
+      var now = new Date();
+      document.getElementById('healthTime').textContent = now.getFullYear() + '/' + (now.getMonth() + 1) + '/' + now.getDate() + ' ' +
+        ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ' 実施・対象 ' + allFactories.length + '件';
+    }
 
     // ---- タブ切り替え ----
     function switchTab(name) {
@@ -1290,9 +1449,10 @@
       var u = data.unscheduled || [];
       if (u.length > 0) {
         var html = '<p class="warn" style="margin-top:14px">⚠ 期間内に満了だが組めなかった工場：' + u.length + '件（要確認）</p>' +
-          '<div class="card"><table><thead><tr><th>管理番号</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th></tr></thead><tbody>';
+          '<div class="card"><table><thead><tr><th>管理番号</th><th>事業所名</th><th>地区</th><th>満了日</th><th>定休日</th><th>組めない理由と対処</th></tr></thead><tbody>';
         u.forEach(function (f) {
-          html += '<tr><td>' + esc(f.management_no) + '</td><td>' + esc(f.office_name) + '</td><td>' + esc(f.district) + '</td><td>' + esc(f.expiry_date) + '</td><td>' + esc(f.closed_days) + '</td></tr>';
+          html += '<tr><td>' + esc(f.management_no) + '</td><td class="names">' + esc(f.office_name) + '</td><td>' + esc(f.district) + '</td><td>' + esc(f.expiry_date) + '</td><td>' + esc(f.closed_days) + '</td>' +
+            '<td style="white-space:normal; font-size:12px; color:#92400e; min-width:260px;">' + esc(f.reason || '') + '</td></tr>';
         });
         html += '</tbody></table></div>';
         annUnsched.innerHTML = html;
