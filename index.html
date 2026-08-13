@@ -696,13 +696,25 @@
       render();
     });
     async function runHealthCheck() {
-      if (!apiUrl() || !apiToken()) { setStatus('先にURLと合言葉を設定してください', true); return; }
-      if (!allFactories || allFactories.length === 0) await load();
-      if (!allFactories || allFactories.length === 0) return;
       var ov = document.getElementById('healthOverlay');
       var body = document.getElementById('healthBody');
       ov.hidden = false;
-      body.innerHTML = '診断中…';
+      // ★途中で何が起きても「診断中…」のまま止まらないよう、全体をtry/catchで包み
+      //   エラーはそのまま画面に表示する（原因調査ができるように）
+      try {
+        await runHealthCheckInner(body);
+      } catch (eAll) {
+        body.innerHTML = '<div style="color:#b91c1c; font-weight:700;">⚠ 診断中にエラーが発生しました</div>' +
+          '<div style="font-size:12px; color:#64748b; margin-top:6px;">' + esc(String(eAll && eAll.stack ? eAll.stack : eAll)) + '</div>' +
+          '<div style="font-size:12px; margin-top:8px;">この表示の内容を管理者（またはClaude）に伝えてください。</div>';
+      }
+    }
+    async function runHealthCheckInner(body) {
+      if (!apiUrl() || !apiToken()) { body.innerHTML = '⚠ 先に画面上部でURLと合言葉を設定してください'; return; }
+      body.innerHTML = '診断中…（工場データを読み込んでいます）';
+      if (!allFactories || allFactories.length === 0) await load();
+      if (!allFactories || allFactories.length === 0) { body.innerHTML = '⚠ 工場データを読み込めませんでした。「再読み込み」を押してからやり直してください'; return; }
+      body.innerHTML = '診断中…（工場データを点検しています）';
       var today = new Date(); today.setHours(0, 0, 0, 0);
       var mgSet = {};
       allFactories.forEach(function (f) { mgSet[String(f.management_no)] = true; });
@@ -738,12 +750,17 @@
           if (v && /^\d+$/.test(v) && !mgSet[v]) refBroken.push({ mg: mg, x: nm + '：' + pair[1] + 'の相手「' + v + '」が見つかりません' });
         });
       });
-      // ---- シート類・バックアップの状態（サーバ） ----
-      var sv = null;
+      // ---- シート類・バックアップの状態（サーバ・15秒で見切る） ----
+      body.innerHTML = '診断中…（シート類とバックアップの状態を確認しています。最大15秒）';
+      var sv = null, svOld = false;
       try {
-        var r = await fetch(apiUrl() + '?action=healthcheck&token=' + encodeURIComponent(apiToken()) + '&_=' + (new Date().getTime()));
+        var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var tmo = ctl ? setTimeout(function () { ctl.abort(); }, 15000) : null;
+        var r = await fetch(apiUrl() + '?action=healthcheck&token=' + encodeURIComponent(apiToken()) + '&_=' + (new Date().getTime()), ctl ? { signal: ctl.signal } : undefined);
+        if (tmo) clearTimeout(tmo);
         sv = await r.json();
       } catch (e) { sv = null; }
+      if (sv && sv.error) { svOld = true; sv = null; }   // 旧バージョンのCode.gs（healthcheck未対応）
       // ---- 結果の組み立て ----
       healthCats = {};
       var greens = [];
@@ -768,8 +785,10 @@
         ['plan', 'holidays', 'routes', 'backup'].forEach(function (k) {
           if (sv[k] && !sv[k].ok) svRed += '<div style="margin:2px 0 10px;">・⚠ ' + esc(sv[k].msg) + '</div>';
         });
+      } else if (svOld) {
+        svRed += '<div style="margin:2px 0 10px;">・⚠ シート類の状態確認は、Code.gsのデプロイ後に有効になります（工場データの点検は上記のとおり完了）</div>';
       } else {
-        svRed += '<div style="margin:2px 0 10px;">・⚠ シート類の状態確認に失敗しました（healthcheck未デプロイの可能性）</div>';
+        svRed += '<div style="margin:2px 0 10px;">・⚠ シート類の状態確認が時間内に応答しませんでした（通信の一時的な問題の可能性。もう一度お試しください）</div>';
       }
       html += head('#fef2f2', '#b91c1c', '🔴 すぐ直した方がよいもの');
       html += (redRows + svRed) || '<div style="color:#16a34a; margin:4px 0 10px;">なし 🎉</div>';
