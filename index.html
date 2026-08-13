@@ -87,6 +87,7 @@
     /* 順路図・月間マップ（地図モーダル） */
     #mapOverlay { position: fixed; inset: 0; background: rgba(8,14,30,.5); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 60; }
     #mapOverlay[hidden] { display: none; }
+    #healthOverlay[hidden] { display: none !important; }   /* 健康診断パネル: 閉じている間は非表示（inlineのdisplay:flexに勝つ） */
     #mapOverlay .mapbox { background: #fff; border-radius: 16px; padding: 14px; width: min(920px, 96vw); box-shadow: 0 24px 60px -12px rgba(2,6,23,.5); }
     #routeMap { height: min(70vh, 560px); width: 100%; border-radius: 10px; background: #eef2f7; }
     .maphead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
