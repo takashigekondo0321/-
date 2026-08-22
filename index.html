@@ -1060,7 +1060,7 @@
       branchLat: 35.140366, branchLng: 136.922104,
       shortKm: 15, spNear: 20, spFar: 50,
       lunchStart: 690, lunchMin: 60, maxAm: 2,
-      lastStart: 960, lastEnd: 1050, minInt: 30, hopMin: 10,   // 最終訪問の開始は16:00(=960分)まで
+      lastStart: 990, lastEnd: 1080, minInt: 30, hopMin: 10,   // 最終訪問の開始は16:30(=990分)まで（2026-08-22変更）
       f1Min: 35, f2Min: 20, depF1: 510, depF2: 525, depF3: 540,
       directMany: 570, directFew: 580, stayNext: 540, stayFirstDep: 540
     };
@@ -1148,7 +1148,7 @@
         v.detour_hint = null;   // 手直し後は直線計算になるため迂回ヒントはいったん消す（作り直すと再判定）
         v.planned_start = fmtJs(start);
         v.planned_end = fmtJs(end);
-        // 収まらない場合は赤表示: 16:00開始/17:30終了の全体ルールに加え、
+        // 収まらない場合は赤表示: 16:30開始/18:00終了の全体ルールに加え、
         // その工場の営業終了時間に食い込む場合も赤にする（手直しで順番を変えたときの見落とし防止）
         var closeM = v.closing_time ? hmJs(v.closing_time) : null;
         v.overrun = (start > GENJS.lastStart || end > GENJS.lastEnd || (closeM != null && closeM > 0 && end > closeM));
