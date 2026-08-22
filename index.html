@@ -1060,7 +1060,8 @@
       branchLat: 35.140366, branchLng: 136.922104,
       shortKm: 15, spNear: 20, spFar: 50,
       lunchStart: 690, lunchMin: 60, maxAm: 2,
-      lastStart: 990, lastEnd: 1080, minInt: 30, hopMin: 10,   // 最終訪問の開始は16:30(=990分)まで（2026-08-22変更）
+      lastStart: 960, lastEnd: 1050, minInt: 30, hopMin: 10,   // 日帰り・直行: 最終開始16:00(=960分)まで
+      stayLastStart: 990, stayLastEnd: 1080,                   // 宿泊週(初日/2日目/宿替え)だけ16:30/18:00に延長（2026-08-22）
       f1Min: 35, f2Min: 20, depF1: 510, depF2: 525, depF3: 540,
       directMany: 570, directFew: 580, stayNext: 540, stayFirstDep: 540
     };
@@ -1097,6 +1098,10 @@
       var oLat = (d.origin_lat != null ? Number(d.origin_lat) : GENJS.branchLat);
       var oLng = (d.origin_lng != null ? Number(d.origin_lng) : GENJS.branchLng);
       var curLat = oLat, curLng = oLng, curEnd = null, prevStart = null, am = 0, lunch = false;
+      // 宿泊週だけ最終訪問の上限が16:30/18:00（日帰り・直行は16:00/17:30）
+      var stayTrip = (d.trip === '宿泊初日' || d.trip === '宿泊2日目' || d.trip === '宿替え');
+      var lastStartCap = stayTrip ? GENJS.stayLastStart : GENJS.lastStart;
+      var lastEndCap = stayTrip ? GENJS.stayLastEnd : GENJS.lastEnd;
       for (var i = 0; i < d.visits.length; i++) {
         var v = d.visits[i];
         var dist = havJs(curLat, curLng, Number(v.lat), Number(v.lng));
@@ -1148,10 +1153,10 @@
         v.detour_hint = null;   // 手直し後は直線計算になるため迂回ヒントはいったん消す（作り直すと再判定）
         v.planned_start = fmtJs(start);
         v.planned_end = fmtJs(end);
-        // 収まらない場合は赤表示: 16:30開始/18:00終了の全体ルールに加え、
+        // 収まらない場合は赤表示: 最終開始16:00(宿泊週16:30)/終了17:30(宿泊週18:00)の全体ルールに加え、
         // その工場の営業終了時間に食い込む場合も赤にする（手直しで順番を変えたときの見落とし防止）
         var closeM = v.closing_time ? hmJs(v.closing_time) : null;
-        v.overrun = (start > GENJS.lastStart || end > GENJS.lastEnd || (closeM != null && closeM > 0 && end > closeM));
+        v.overrun = (start > lastStartCap || end > lastEndCap || (closeM != null && closeM > 0 && end > closeM));
         if (start < 720) am++;
         prevStart = start; curEnd = end; curLat = Number(v.lat); curLng = Number(v.lng);
       }
